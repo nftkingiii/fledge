@@ -11,7 +11,7 @@ Anambra Web3 Hackathon 2026 · DeFi track.
 ## How it works
 
 1. **The promise.** The Oga sets the amount, the term, an instalment schedule and named witnesses (market union, family, church). The apprentice accepts it on chain.
-2. **Gradual funding, in naira or crypto.** The Oga pays each instalment by bank transfer in naira to a one-time account; when the transfer is confirmed in full it is converted at Roqqu's live rate and credited on chain, with the naira amount and rate kept in the on-chain reference. He can also pay in crypto: a Roqqu payment link priced in naira and paid in USDT. When Roqqu's webhook arrives, Fledge decrypts it, checks the deposit with Roqqu by its hash, and only then credits the promise on chain.
+2. **Gradual funding through Roqqu, or by naira transfer.** Each instalment is a Roqqu payment link priced in naira and paid in USDT; Roqqu's webhook is decrypted and the deposit checked with Roqqu before the promise is credited. An Oga without crypto can instead pay by bank transfer in naira to a one-time account; once confirmed in full it is converted at Roqqu's live rate and credited, with the naira amount and rate kept in the on-chain reference. That naira rail is where Roqqu's NGN wallet would plug in if it opens to merchants. When Roqqu's webhook arrives, Fledge decrypts it, checks the deposit with Roqqu by its hash, and only then credits the promise on chain.
 3. **Arrears are visible early.** The contract knows what should have been paid by now, so the witnesses see a missed quarter years before settlement day.
 4. **Settlement day, even when the money isn't all there.** Anyone on the promise can propose a resolution:
    - pay what is held now and set a new date for the rest,
@@ -21,7 +21,7 @@ Anambra Web3 Hackathon 2026 · DeFi track.
    - a reduction (for example after a market fire).
 
    It applies only when the **apprentice consents** and **a quorum of witnesses approves**. The Oga's approval is not required, and he has no way to withdraw funded money.
-5. **Payout in naira or USDC.** Only what an applied resolution made payable can be sent: as naira to the apprentice's bank account (bank list and account-name lookup first), or as USDC on Base through Roqqu Send. The bank or Roqqu reference, and for naira the amount and rate, are recorded on chain; account numbers are kept to their last four digits.
+5. **Payout through Roqqu, or to a bank.** Only what an applied resolution made payable can be sent: as USDC on Base through Roqqu Send, or as naira to the apprentice's bank account (bank list and account-name lookup first). The bank or Roqqu reference, and for naira the amount and rate, are recorded on chain; account numbers are kept to their last four digits.
 6. **A public settlement record.** Each Oga carries a record across apprentices: promises closed, % delivered, extensions, reductions.
 
 ## What is real, what is simulated

@@ -482,8 +482,8 @@ function FundingTab({ p, naira, config, busy, run }) {
             </div>
           ) : !link ? (
             <>
-              <button className="btn primary" disabled={busy || down} onClick={getTransfer}><Landmark size={18} strokeWidth={1.5} /> Pay {naira(inst)} by bank transfer</button>
-              <button className="btn" disabled={busy || down} onClick={getLink}>Pay in crypto through Roqqu</button>
+              <button className="btn primary" disabled={busy || down} onClick={getLink}>Pay {naira(inst)} with Roqqu</button>
+              <button className="btn" disabled={busy || down} onClick={getTransfer}><Landmark size={18} strokeWidth={1.5} /> Pay by bank transfer instead</button>
               {down && <small className="muted">Payments are unavailable right now. Try again when they are back.</small>}
             </>
           ) : (
@@ -661,7 +661,7 @@ function RecordTab({ p, naira, config }) {
 
 /** Pays out what a resolution approved: naira to a bank account, or USDC on Base through Roqqu. */
 function Payout({ p, naira, ngn, busy, run }) {
-  const [method, setMethod] = useState("bank");
+  const [method, setMethod] = useState("usdc");
   const [banks, setBanks] = useState([]);
   const [bankCode, setBankCode] = useState("");
   const [accountNumber, setAccountNumber] = useState("");
@@ -692,8 +692,8 @@ function Payout({ p, naira, ngn, busy, run }) {
     <div className="payout">
       <p className="payout-head"><b>{naira(p.payable)}</b> is approved for the apprentice</p>
       <div className="seg" role="radiogroup" aria-label="Pay out as">
+        <button role="radio" aria-checked={method === "usdc"} className={method === "usdc" ? "on" : ""} onClick={() => setMethod("usdc")}>USDC through Roqqu</button>
         <button role="radio" aria-checked={method === "bank"} className={method === "bank" ? "on" : ""} onClick={() => setMethod("bank")}>Naira to a bank account</button>
-        <button role="radio" aria-checked={method === "usdc"} className={method === "usdc" ? "on" : ""} onClick={() => setMethod("usdc")}>USDC on Base</button>
       </div>
       {method === "bank" ? (
         <div className="fields">
@@ -710,7 +710,7 @@ function Payout({ p, naira, ngn, busy, run }) {
           {holder?.error && <p className="holder bad full">{holder.error}</p>}
         </div>
       ) : (
-        <p className="muted">Sent as USDC on Base to the apprentice's wallet through Roqqu.</p>
+        <p className="muted">Sent with Roqqu as USDC on Base to the apprentice's wallet.</p>
       )}
       <button className="btn primary" disabled={busy || (method === "bank" && !holder?.name)} onClick={send}>
         {method === "bank" ? `Send ₦${ngnAmount?.toLocaleString("en-NG") ?? "…"}${holder?.name ? ` to ${holder.name}` : ""}` : `Send ${p.payable.toLocaleString()} USDC`}
