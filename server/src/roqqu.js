@@ -1,6 +1,7 @@
 import crypto from "node:crypto";
 
-const BASE = "https://service.roqqu.com/v1";
+// The simulator sets ROQQU_BASE to its own address; everything else is unchanged.
+const base = () => process.env.ROQQU_BASE || "https://service.roqqu.com/v1";
 
 // Test mode and live mode use different header names for the same key slot.
 function authHeaders() {
@@ -18,7 +19,7 @@ async function call(method, path, { body, auth = true } = {}) {
       Object.entries(body).map(([k, v]) => [k, typeof v === "string" ? v : JSON.stringify(v)])
     ).toString();
   }
-  const res = await fetch(BASE + path, { method, headers, body: payload, signal: AbortSignal.timeout(20_000) });
+  const res = await fetch(base() + path, { method, headers, body: payload, signal: AbortSignal.timeout(20_000) });
   const text = await res.text();
   let json;
   try {

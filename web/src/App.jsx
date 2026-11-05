@@ -38,8 +38,7 @@ function useNow() {
 function refSource(ref) {
   if (ref.startsWith("roqqu")) return ["Roqqu", "roqqu"];
   if (ref.startsWith("SEED")) return ["Seeded history", "seed"];
-  if (ref.startsWith("DEMO")) return ["Demo payment", "demo"];
-  return ["Other", ""];
+    return ["Other", ""];
 }
 
 export default function App() {
@@ -69,7 +68,10 @@ export default function App() {
   }, [selected]);
 
   useEffect(() => {
-    api("/api/config").then(setConfig).catch((e) => setToast({ err: true, text: e.message }));
+    const load = () => api("/api/config").then(setConfig).catch((e) => setToast({ err: true, text: e.message }));
+    load();
+    const t = setInterval(load, 15000);
+    return () => clearInterval(t);
   }, []);
   useEffect(() => {
     if (config?.configured) loadList().catch(() => {});
@@ -128,12 +130,19 @@ export default function App() {
         )}
       </header>
 
-      <div className={`banner ${config.roqqu.live ? "live" : ""}`}>
-        {config.roqqu.live
-          ? `Roqqu ${config.roqqu.mode} mode is connected: instalments are paid through Roqqu payment links.`
-          : `Demo mode. Roqqu is not connected (${config.roqqu.reason}), so instalments are credited as labelled demo payments.`}
+      <div className={`banner ${config.roqqu.connected && !config.roqqu.outage ? "live" : ""}`}>
+        {config.roqqu.mode === "simulated"
+          ? "Roqqu simulator: same payment-link, webhook, deposit-check and send formats as Roqqu API Services. No real money moves."
+          : `Roqqu ${config.roqqu.mode} mode.`}
+        {config.roqqu.outage && " Roqqu is DOWN right now: instalments wait and are credited once it is back."}
+        {!config.roqqu.connected && !config.roqqu.outage && ` Roqqu unavailable (${config.roqqu.reason}).`}
         {config.demo && " The server signs for each role; in production each person signs with their own wallet."}
-        {ngn && ` Rate from Roqqu: ₦${ngn.toLocaleString()} per $1.`}
+        {ngn && ` Rate: ₦${ngn.toLocaleString()} per $1.`}
+        {config.roqqu.mode === "simulated" && (
+          <button style={{ marginLeft: 10, padding: "2px 10px", fontSize: 12 }} onClick={() => api("/api/sim/outage", { on: !config.roqqu.outage }).then(() => api("/api/config").then(setConfig))}>
+            {config.roqqu.outage ? "End Roqqu outage" : "Simulate Roqqu outage"}
+          </button>
+        )}
       </div>
 
       {!config.configured ? (
@@ -225,7 +234,6 @@ function FundingTab({ p, naira, config, busy, run }) {
       setLink(r);
       return null;
     });
-  const demoPay = () => run("Demo instalment credited", () => api(`/api/promises/${p.id}/demo-pay`, { amountUsd: link.amountUsd }).then((r) => (setLink(null), r)));
 
   return (
     <>
@@ -251,16 +259,11 @@ function FundingTab({ p, naira, config, busy, run }) {
           <h3>Pay the next instalment</h3>
           {!link ? (
             <button className="primary" disabled={busy} onClick={getLink}>Get a Roqqu payment link for {naira(instalment)}</button>
-          ) : link.demo ? (
-            <div className="row">
-              <span>Roqqu is not connected, so this instalment of ₦{link.amountNgn.toLocaleString()} can only be credited as a demo payment.</span>
-              <button className="primary" disabled={busy} onClick={demoPay}>Credit demo payment</button>
-            </div>
           ) : (
             <div className="row">
-              <a className="primary" href={link.link} target="_blank" rel="noreferrer"><button className="primary">Pay ₦{link.amountNgn.toLocaleString()} on Roqqu</button></a>
+              <a href={link.link} target="_blank" rel="noreferrer" onClick={() => setTimeout(() => setLink(null), 500)}><button className="primary">Pay ₦{link.amountNgn.toLocaleString()} on Roqqu</button></a>
               <span className="mono">ref {link.reference}</span>
-              <span>It is credited here when Roqqu confirms the deposit.</span>
+              <span className="legend">Credited here only after Roqqu's webhook arrives and Roqqu confirms the deposit.</span>
             </div>
           )}
         </div>
@@ -282,8 +285,13 @@ function FundingTab({ p, naira, config, busy, run }) {
                 </tr>
               );
             })}
-            {p.roqquEvents.filter((e) => !e.creditTx).map((e, i) => (
-              <tr key={i}><td>—</td><td><span className="tag">{e.type}</span></td><td className="mono">{e.reference}</td><td>{e.note || "not credited"}</td></tr>
+            {p.roqquEvents.filter((e) => !e.creditTx || e.note).map((e, i) => (
+              <tr key={i}>
+                <td>—</td>
+                <td><span className={`tag ${e.creditTx ? "roqqu" : "demo"}`}>{e.type.replace("payment_link_", "Roqqu ")}</span></td>
+                <td className="mono">{e.reference}</td>
+                <td>{e.note || "not credited"}</td>
+              </tr>
             ))}
           </tbody>
         </table>
@@ -333,7 +341,7 @@ function SettlementTab({ p, naira, config, role, busy, act, run, ngn }) {
         <div className="callout ok row">
           <span>{naira(p.payable)} is approved for the apprentice.</span>
           <button className="primary" disabled={busy} onClick={() => run("Payout recorded", () => api(`/api/promises/${p.id}/payout`, {}))}>
-            {config.roqqu.live ? "Send through Roqqu" : "Record demo payout"}
+            Send through Roqqu
           </button>
         </div>
       )}

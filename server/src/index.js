@@ -1,28 +1,43 @@
 import express from "express";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import crypto from "node:crypto";
 import * as roqqu from "./roqqu.js";
 import * as chain from "./chain.js";
+import { createRoqquSim } from "./roqqu-sim.js";
 
 const app = express();
-const PORT = Number(process.env.PORT || 8787);
+const PORT = Number(process.env.PORT || 8790);
 const PUBLIC_URL = process.env.PUBLIC_URL || `http://localhost:${PORT}`;
+const INTERNAL_URL = `http://127.0.0.1:${PORT}`;
 const DEMO = Boolean(Object.keys(chain.demoRoles).length);
+const MODE = process.env.ROQQU_MODE || "simulated";
 
-// Roqqu is "live" only after a real authenticated call succeeds; anything else is shown as demo.
-const roqquState = { live: false, mode: process.env.ROQQU_MODE || "test", reason: "not checked yet", checkedAt: null };
+// Simulated mode: the Roqqu client talks HTTP to a local copy of the Roqqu API.
+let sim = null;
+if (MODE === "simulated") {
+  process.env.ROQQU_API_KEY = crypto.randomBytes(32).toString("hex");
+  process.env.ROQQU_BASE = `${INTERNAL_URL}/sim/roqqu/v1`;
+  sim = createRoqquSim({ key: process.env.ROQQU_API_KEY, publicUrl: PUBLIC_URL, webhookUrl: `${INTERNAL_URL}/webhooks/roqqu` });
+  app.use("/sim/roqqu", sim.router);
+}
+
+// "connected" only after an authenticated call to whichever Roqqu we point at succeeds.
+const roqquState = { connected: false, mode: MODE, reason: "not checked yet", checkedAt: null };
 async function checkRoqqu() {
   try {
     await roqqu.balances();
-    Object.assign(roqquState, { live: true, reason: "balance check passed" });
+    Object.assign(roqquState, { connected: true, reason: "balance check passed" });
   } catch (e) {
-    Object.assign(roqquState, { live: false, reason: e.message });
+    Object.assign(roqquState, { connected: false, reason: e.message });
   }
   roqquState.checkedAt = new Date().toISOString();
 }
 
-// Unmatched Roqqu events (failed or underpaid links) are kept for the funding view.
+// Roqqu link events per promise, for the funding view (in memory; the credits themselves are on chain).
 const roqquEvents = [];
+// Confirmed payments that could not be credited yet, e.g. Roqqu or the RPC was down.
+const retryQueue = [];
 
 app.use("/webhooks", express.json({ limit: "64kb" }));
 app.use("/api", express.json({ limit: "16kb" }));
@@ -47,7 +62,7 @@ app.get("/api/config", wrap(async (_req, res) => {
     configured: chain.configured(),
     demo: DEMO,
     roles: Object.fromEntries(Object.entries(chain.demoRoles).map(([k, a]) => [k, a.address])),
-    roqqu: { ...roqquState },
+    roqqu: { ...roqquState, outage: sim?.state.outage || false, retrying: retryQueue.length },
     ngnPerUsd,
   });
 }));
@@ -76,9 +91,6 @@ app.post("/api/promises/:id/link", wrap(async (req, res) => {
   const instalmentUsd = req.body?.amountUsd ? Number(req.body.amountUsd) : p.original / p.instalments;
   if (!(instalmentUsd > 0)) throw new Error("Amount must be positive");
   const amountNgn = Math.round(instalmentUsd * rate);
-  if (!roqquState.live) {
-    return res.json({ demo: true, amountNgn, amountUsd: instalmentUsd, reason: roqquState.reason });
-  }
   const reference = roqqu.instalmentReference(id);
   const link = await roqqu.createInstalmentLink({
     amountNgn,
@@ -89,19 +101,14 @@ app.post("/api/promises/:id/link", wrap(async (req, res) => {
     cancelUrl: `${PUBLIC_URL}/?promise=${id}`,
     expiresAt: new Date(Date.now() + 24 * 3600e3).toISOString(),
   });
-  res.json({ demo: false, amountNgn, amountUsd: instalmentUsd, reference, link: link.payment_link, refid: link.refid });
+  res.json({ amountNgn, amountUsd: instalmentUsd, reference, link: link.payment_link, refid: link.refid });
 }));
 
-// Demo only: stands in for a Roqqu payment when no working key is configured.
-app.post("/api/promises/:id/demo-pay", wrap(async (req, res) => {
-  if (!DEMO) throw new Error("Demo mode is off");
-  if (roqquState.live) throw new Error("Roqqu is live; pay through the Roqqu link");
-  const id = Number(req.params.id);
-  const amountUsd = Number(req.body?.amountUsd);
-  if (!(amountUsd > 0 && amountUsd <= 5_000)) throw new Error("Amount out of range");
-  const ref = `DEMO-${Date.now()}`;
-  const { hash } = await chain.asOperator("credit", [BigInt(id), chain.toMicro(amountUsd), ref]);
-  res.json({ hash, ref });
+// Demo control for the simulator: switch a Roqqu outage on or off.
+app.post("/api/sim/outage", wrap(async (req, res) => {
+  if (!sim) throw new Error("Not running the Roqqu simulator");
+  sim.state.outage = Boolean(req.body?.on);
+  res.json({ outage: sim.state.outage });
 }));
 
 app.post("/webhooks/roqqu", wrap(async (req, res) => {
@@ -120,18 +127,53 @@ async function handleRoqquEvent(event) {
   roqquEvents.unshift(entry);
   if (roqquEvents.length > 200) roqquEvents.pop();
 
+  if (event.event_type === "payment_link_failed") {
+    entry.note = `Underpaid: not credited, ${m.underpaid_amount} USDT short. Roqqu marks the received amount refund-eligible.`;
+    return;
+  }
   if (event.event_type !== "payment_link_completed" && event.event_type !== "payment_link_completed_overpaid") return;
+  if (event.event_type === "payment_link_completed_overpaid") entry.note = `Overpaid by ${m.overpaid_amount} USDT; the full amount is credited.`;
+  await creditWithRetry({ entry, promiseId, m });
+}
 
+async function creditWithRetry(job) {
+  try {
+    await confirmAndCredit(job);
+  } catch (e) {
+    // Roqqu or the chain is unavailable: keep the job and try again; the ref keeps it from crediting twice.
+    job.entry.note = `Waiting to credit: ${e.message}`;
+    if (!retryQueue.includes(job)) retryQueue.push(job);
+  }
+}
+
+async function confirmAndCredit({ entry, promiseId, m }) {
   // Do not trust the webhook alone: Roqqu must also know the deposit by its hash.
   const deposit = await roqqu.depositByHash(m.hash);
   if (Number(deposit.status) !== 1 || deposit.address?.toLowerCase() !== String(m.address).toLowerCase()) {
-    entry.note = "deposit not confirmed by Roqqu";
+    entry.note = "Deposit not confirmed by Roqqu; not credited";
     return;
   }
   const usdValue = String(m.token).toUpperCase() === "USDT" ? Number(m.value) : Number(m.amount_received_usd);
-  const { hash } = await chain.asOperator("credit", [BigInt(promiseId), chain.toMicro(usdValue), `roqqu:${m.payment_link_refid}`]);
-  entry.creditTx = hash;
+  try {
+    const { hash } = await chain.asOperator("credit", [BigInt(promiseId), chain.toMicro(usdValue), `roqqu:${m.payment_link_refid}`]);
+    entry.creditTx = hash;
+    entry.note = entry.note?.startsWith("Overpaid") ? entry.note : undefined;
+  } catch (e) {
+    if (/RefReused/.test(e.message)) entry.note = "Already credited";
+    else throw e;
+  }
 }
+
+setInterval(async () => {
+  for (const job of [...retryQueue]) {
+    try {
+      await confirmAndCredit(job);
+      retryQueue.splice(retryQueue.indexOf(job), 1);
+    } catch (e) {
+      job.entry.note = `Waiting to credit: ${e.message}`;
+    }
+  }
+}, 15_000).unref();
 
 // ---- payouts through Roqqu ----
 
@@ -139,16 +181,11 @@ app.post("/api/promises/:id/payout", wrap(async (req, res) => {
   const id = Number(req.params.id);
   const p = await chain.readPromise(id);
   if (!p || !(p.payable > 0)) throw new Error("Nothing is payable on this promise");
-  let ref;
-  if (roqquState.live) {
-    const sent = await roqqu.sendUsdt({ amount: p.payable, to: req.body?.to || p.apprentice });
-    ref = `roqqu-send:${sent.refid}`;
-  } else {
-    if (!DEMO) throw new Error("Roqqu is not live");
-    ref = `DEMO-SEND-${Date.now()}`;
-  }
+  // Only what an applied resolution made payable can be sent; Roqqu queues the send and returns a refid.
+  const sent = await roqqu.sendUsdt({ amount: p.payable, to: req.body?.to || p.apprentice });
+  const ref = `roqqu-send:${sent.refid}`;
   const { hash } = await chain.asOperator("markPaid", [BigInt(id), chain.toMicro(p.payable), ref]);
-  res.json({ hash, ref, amount: p.payable, demo: !roqquState.live });
+  res.json({ hash, ref, amount: p.payable });
 }));
 
 // ---- demo signers for the Oga, apprentice and witnesses ----
@@ -211,6 +248,7 @@ app.post("/api/demo/scenario", wrap(async (req, res) => {
   await chain.asRole("apprentice", "accept", [BigInt(id)]);
   // Nine of fifteen quarters already paid in: arrears are visible from the start.
   await chain.asOperator("credit", [BigInt(id), chain.toMicro(1_125), `SEED-history-${id}`]);
+  sim?.seedBalance(1_125);
   res.json({ id });
 }));
 
@@ -219,9 +257,10 @@ const web = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../we
 app.use(express.static(web));
 app.get(/^\/(?!api|webhooks).*/, (_req, res) => res.sendFile(path.join(web, "index.html")));
 
-checkRoqqu().finally(() => {
-  app.listen(PORT, () => {
-    console.log(`Nkwa on ${PUBLIC_URL} | contract ${chain.contractAddress() || "not set"} | Roqqu ${roqquState.live ? "live" : "demo"}: ${roqquState.reason}`);
+// The simulator lives on this server, so check Roqqu only once we are listening.
+app.listen(PORT, () => {
+  checkRoqqu().finally(() => {
+    console.log(`Nkwa on ${PUBLIC_URL} | contract ${chain.contractAddress() || "not set"} | Roqqu ${MODE} ${roqquState.connected ? "connected" : "unavailable"}: ${roqquState.reason}`);
   });
 });
 setInterval(checkRoqqu, 10 * 60_000).unref();
