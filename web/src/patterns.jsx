@@ -1,3 +1,4 @@
+import { Emblem } from "./art.jsx";
 import React, { useId } from "react";
 
 // Original geometric motifs in the spirit of uli and akwete cloth. Each tile is
@@ -96,12 +97,7 @@ export function Seal({ approved, initials, title }) {
   );
 }
 
-/** The logo mark: a small seal with the N cut through it. */
+/** The logo mark is the cloth emblem. */
 export function Mark({ size = 28 }) {
-  return (
-    <svg width={size} height={size} viewBox="0 0 32 32" aria-hidden="true">
-      <circle cx="16" cy="16" r="15" fill="var(--accent)" />
-      <path d="M10 22V10l12 12V10" stroke="var(--bg)" strokeWidth="2.6" fill="none" strokeLinecap="round" strokeLinejoin="round" />
-    </svg>
-  );
+  return <Emblem size={size} detail={size >= 40} />;
 }

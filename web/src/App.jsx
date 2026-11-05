@@ -1,6 +1,17 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import { ScrollText, Coins, Scale, BookOpen, ChevronDown, ExternalLink, Info, Check, X } from "lucide-react";
 import { Cloth, Seal, Mark, Stripe, CLOTH } from "./patterns.jsx";
+import { BackgroundArt } from "./art.jsx";
+import SignIn from "./signin.jsx";
+
+const SESSION_KEY = "nkwa.session";
+const readSession = () => {
+  try {
+    return JSON.parse(localStorage.getItem(SESSION_KEY) || "null");
+  } catch {
+    return null;
+  }
+};
 
 const api = async (path, body) => {
   const res = await fetch(path, body ? { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) } : undefined);
@@ -77,7 +88,8 @@ export default function App() {
   const [selected, setSelected] = useState(null);
   const [promise, setPromise] = useState(null);
   const [tab, setTab] = useState("promise");
-  const [role, setRole] = useState("apprentice");
+  const [session, setSession] = useState(readSession);
+  const [role, setRole] = useState(() => readSession()?.role || "apprentice");
   const [sheet, setSheet] = useState(null);
   const [busy, setBusy] = useState(false);
   const [toast, setToast] = useState(null);
@@ -141,14 +153,32 @@ export default function App() {
       return r;
     });
 
+  const signIn = (s) => {
+    try {
+      localStorage.setItem(SESSION_KEY, JSON.stringify(s));
+    } catch {}
+    setSession(s);
+    setRole(s.role);
+  };
+  const signOut = () => {
+    try {
+      localStorage.removeItem(SESSION_KEY);
+    } catch {}
+    setSession(null);
+    setSheet(null);
+  };
+
+  if (!session) return <SignIn onDone={signIn} />;
   if (!config) return <Splash text="Opening the ledger" />;
   if (!config.configured) return <Splash text="The contract address is not set" />;
   if (list && list.length === 0) return <Welcome onStart={startScenario} busy={busy} />;
 
   const me = roleOf(role);
+  const myName = role === session.role ? session.name : me[2];
 
   return (
     <div className="app">
+      <BackgroundArt />
       <nav className="rail" aria-label="Sections">
         <div className="rail-brand"><Mark /><span>Nkwa</span></div>
         {TABS.map(([k, label, Icon]) => (
@@ -166,8 +196,8 @@ export default function App() {
             <ChevronDown size={16} strokeWidth={1.5} />
           </button>
           <button className="who" onClick={() => setSheet("role")} title="Who you are acting as">
-            <span className="avatar" data-role={role}>{initials(me[2])}</span>
-            <span className="who-text"><small>Acting as</small>{me[2]}</span>
+            <span className="avatar" data-role={role}>{initials(myName)}</span>
+            <span className="who-text"><small>Acting as</small>{myName}</span>
             <ChevronDown size={16} strokeWidth={1.5} />
           </button>
         </header>
@@ -209,6 +239,7 @@ export default function App() {
               {role === k && <Check size={18} strokeWidth={1.5} />}
             </button>
           ))}
+          <button className="btn wide" onClick={signOut}>Sign out</button>
         </Sheet>
       )}
       {sheet === "promises" && (
@@ -230,6 +261,7 @@ export default function App() {
 function Splash({ text }) {
   return (
     <div className="splash">
+      <BackgroundArt />
       <Cloth height={20} size={20} />
       <p>{text}</p>
     </div>
@@ -239,6 +271,7 @@ function Splash({ text }) {
 function Welcome({ onStart, busy }) {
   return (
     <div className="welcome">
+      <BackgroundArt />
       <div className="welcome-cloth" aria-hidden="true">
         {CLOTH.map((s, i) => <Stripe key={i} {...s} height="25%" size={56} />)}
         <div className="welcome-medallion"><Mark size={72} /></div>
