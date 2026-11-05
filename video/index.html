@@ -1,0 +1,242 @@
+<!doctype html>
+<!-- Fledge launch reel. A seek(t) film: every frame is a pure function of t. No CSS transitions, no timers,
+     no state between frames, no Math.random. Scrub it live in a browser; render with render.mjs. -->
+<html><head><meta charset="utf-8"><title>Fledge reel</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,500&family=Instrument+Sans:wght@400;500;600&display=block" rel="stylesheet">
+<style>html,body{margin:0;background:#111}canvas{display:block;max-width:100vw;max-height:100vh;margin:auto}</style>
+</head><body>
+<canvas id="c"></canvas>
+<script src="lib/motion.js"></script>
+<script>
+const Q = new URLSearchParams(location.search);
+const W = +(Q.get('w') || 1920), H = +(Q.get('h') || 1080);
+window.FILM = { w: W, h: H, dur: 26, fps: 30 };
+const BEAT = { bpm: 120, offset: 0 };
+const L = layout(W, H), u = L.u, P = L.portrait;
+
+// The app's own palette (web/src/styles.css) and faces.
+const C = { bg: '#f7f4ee', ink: '#1f1b16', ink2: '#5e554a', mute: '#7b7266', accent: '#a3302a', gold: '#e9a23b',
+            maroon: '#2b1514', cream: '#f6ecdc', bezel: '#1b1714' };
+const F = { display: 'Fraunces, Georgia, serif', ui: '"Instrument Sans", system-ui, sans-serif' };
+
+const cv = document.getElementById('c'); cv.width = W; cv.height = H;
+const g = cv.getContext('2d');
+
+// ---- Assets: phone stills captured from https://fledge.up.railway.app by flows/stills.mjs (390x844 at 2x).
+const IMG = {};
+function img(name, src) { const i = new Image(); i.src = src; IMG[name] = i; return i.decode().catch(() => { IMG[name] = null; console.warn('missing asset: ' + src); }); }
+const STILLS = ['03-promise', '04-funding', '06-roqqu-checkout', '09-promise-paid', '11-cut-blocked-detail', '12-seal-1', '13-seal-2', '14-payable', '15-payout-box', '16-record'];
+window.ready = Promise.all([
+  document.fonts.load(`400 100px ${F.display}`), document.fonts.load(`500 100px ${F.display}`),
+  document.fonts.load(`400 100px ${F.ui}`), document.fonts.load(`500 100px ${F.ui}`), document.fonts.load(`600 100px ${F.ui}`),
+  img('cloth', 'assets/cloth.svg'), img('seal', 'assets/emblem-seal.svg'), img('bird', 'assets/emblem-bird.svg'),
+  ...STILLS.map(s => img(s, `assets/stills/${s}.png`)),
+]);
+
+// ---- Helpers
+function text(str, x, y, size, o = {}) {
+  g.save(); g.font = `${o.weight || 400} ${size}px ${o.font || F.display}`; g.fillStyle = o.color || C.ink;
+  g.textAlign = o.align || 'left'; g.textBaseline = 'alphabetic'; g.globalAlpha *= o.alpha ?? 1;
+  if (o.track) g.letterSpacing = o.track + 'px';
+  g.fillText(str, x, y); const w = g.measureText(str).width; g.restore(); return w;
+}
+function measure(str, size, o = {}) { g.save(); g.font = `${o.weight || 400} ${size}px ${o.font || F.display}`; if (o.track) g.letterSpacing = o.track + 'px'; const w = g.measureText(str).width; g.restore(); return w; }
+// A line made of [string, color] parts, aligned as a whole.
+function parts(list, x, y, size, o = {}) {
+  const total = list.reduce((a, [s]) => a + measure(s, size, o), 0);
+  let cx = o.align === 'center' ? x - total / 2 : x;
+  for (const [s, color] of list) cx += text(s, cx, y, size, { ...o, align: 'left', color });
+  return total;
+}
+function rrect(x, y, w, h, r) { g.beginPath(); g.roundRect(x, y, w, h, r); }
+function missing(name, x, y, w, h) { g.fillStyle = '#FF3B30'; g.fillRect(x, y, w, h); text('MISSING ' + name, x + w / 2, y + h / 2, 28 * u, { font: F.ui, weight: 600, color: '#fff', align: 'center' }); }
+
+// Cloth band: n stripes from the app's pattern, sliding by `shift` px.
+function cloth(y, n, shift, h = 56 * u, from = 0) {
+  const i = IMG.cloth; if (!i) return missing('cloth', 0, y, W, h * n);
+  const sh = 56, sx = ((shift / u) % 1200 + 1200) % 1200;
+  g.drawImage(i, sx, from * sh, W / u, n * sh, 0, y, W, n * h);
+}
+
+// The phone: bezel plus a real still, with an optional second still sliding or fading over it,
+// and a camera push (zoom around a focus point inside the screen).
+const SCREEN_AR = 1688 / 780;
+function phone(o) {
+  const h = o.h, w = h / SCREEN_AR, pad = h * .022, x = o.cx - w / 2, y = o.cy - h / 2;
+  g.save(); g.globalAlpha *= o.alpha ?? 1;
+  if (o.tilt) { g.translate(o.cx, o.cy); g.rotate(o.tilt); g.translate(-o.cx, -o.cy); }
+  g.shadowColor = 'rgba(31,27,22,.28)'; g.shadowBlur = 70 * u; g.shadowOffsetY = 28 * u;
+  g.fillStyle = C.bezel; rrect(x - pad, y - pad, w + 2 * pad, h + 2 * pad, h * .075); g.fill();
+  g.shadowColor = 'transparent';
+  rrect(x, y, w, h, h * .058); g.clip();
+  const z = o.zoom ?? 1, fx = o.fx ?? .5, fy = o.fy ?? .5;
+  const draw = (name, alpha = 1, dy = 0) => {
+    const im = IMG[name]; if (!im) return missing(name, x, y, w, h);
+    g.save(); g.globalAlpha *= alpha;
+    g.drawImage(im, x - (z - 1) * fx * w, y - (z - 1) * fy * h + dy, w * z, h * z); g.restore();
+  };
+  draw(o.a);
+  if (o.b) draw(o.b, o.mix ?? 1, o.slide !== undefined ? (1 - o.slide) * h : 0);
+  g.restore();
+  return { x, y, w, h, z, fx, fy };
+}
+// Screen point (fractions of the still) → frame point, accounting for the push.
+function onScreen(ph, sx, sy) {
+  return [ph.x - (ph.z - 1) * ph.fx * ph.w + sx * ph.w * ph.z, ph.y - (ph.z - 1) * ph.fy * ph.h + sy * ph.h * ph.z];
+}
+function tap(x, y, lt, t0) {
+  const k = seg(lt, t0 - .05, t0 + .45); if (k <= 0 || k >= 1) return;
+  g.save(); g.globalAlpha = (1 - k) * .55; g.strokeStyle = C.cream; g.lineWidth = 6 * u;
+  g.beginPath(); g.arc(x, y, (18 + 70 * easeOut(k)) * u, 0, Math.PI * 2); g.stroke();
+  g.globalAlpha = (1 - k) * .35; g.fillStyle = C.ink; g.beginPath(); g.arc(x, y, 24 * u * (1 - .3 * k), 0, Math.PI * 2); g.fill(); g.restore();
+}
+
+// Copy block beside the phone (landscape) or above it (portrait). Each line springs in at its own time.
+const COPY = P ? { x: L.cx, y: H * .12, align: 'center', size: 88 * u, sub: 34 * u } : { x: W * .075, y: H * .40, align: 'left', size: 118 * u, sub: 40 * u };
+function copy(lt, lines, sub, subAt) {
+  let y = COPY.y;
+  lines.forEach(([at, list]) => {
+    const s = spring(lt - at, ...SPRINGS.snappy);
+    g.save(); g.globalAlpha = clamp(s * 1.6);
+    parts(list, COPY.x, y + (1 - s) * 30 * u, COPY.size, { align: COPY.align, weight: 400 });
+    g.restore(); y += COPY.size * 1.12;
+  });
+  if (sub) {
+    const s = spring(lt - subAt, ...SPRINGS.base);
+    text(sub, COPY.x, y + 22 * u + (1 - s) * 16 * u, COPY.sub, { font: F.ui, color: C.ink2, align: COPY.align, alpha: clamp(s * 1.4) });
+  }
+}
+const PH = P ? { cx: L.cx, cy: H * .62, h: H * .6 } : { cx: W * .7, cy: H * .52, h: H * .86 };
+const rise = (lt, at = 0) => (1 - spring(lt - at, ...SPRINGS.base)) * H * .7;
+
+// ---- Shots. Reads are listed in docs/shotlist.md.
+const SHOTS = [
+  { from: 0, to: 2.5, draw(lt) {                                          // 01 hook on cloth
+      g.fillStyle = C.bg; g.fillRect(0, 0, W, H);
+      const a = spring(lt, ...SPRINGS.base), b = spring(lt - .08, ...SPRINGS.base);
+      cloth(0, 2, (1 - a) * -W + lt * 40 * u, 56 * u);
+      cloth(H - 112 * u, 2, (1 - b) * W - lt * 40 * u, 56 * u, 2);
+      const size = (P ? 120 : 190) * u;
+      const s1 = spring(lt - .15, ...SPRINGS.snappy), s2 = spring(lt - 1.0, ...SPRINGS.snappy);
+      g.save(); g.globalAlpha = clamp(s1 * 1.6);
+      text('Years of service.', L.cx, L.cy - size * .2 + (1 - s1) * 30 * u, size, { align: 'center' }); g.restore();
+      g.save(); g.globalAlpha = clamp(s2 * 1.6);
+      parts([['For a ', C.ink], ['spoken', C.accent], [' promise.', C.ink]], L.cx, L.cy + size * .95 + (1 - s2) * 30 * u, size, { align: 'center' });
+      g.restore();
+  }},
+  { from: 2.5, to: 5.0, draw(lt) {                                        // 02 the problem, struck through
+      g.fillStyle = C.maroon; g.fillRect(0, 0, W, H);
+      const size = (P ? 110 : 165) * u, x = P ? L.cx : W * .12, al = P ? 'center' : 'left';
+      const lines = ['Settlements come late.', 'Shrink.', 'Or never come.'];
+      const top = H * .5 - size * 1.18;
+      lines.forEach((s, i) => {
+        const at = i * .5, k = spring(lt - at, ...SPRINGS.snappy), y = top + size * .35 + i * size * 1.18 + (1 - k) * 24 * u;
+        g.save(); g.globalAlpha = clamp(k * 1.6);
+        const w = text(s, x, y, size, { color: C.cream, align: al });
+        const st = easeOut(seg(lt, 1.5 + i * .2, 1.85 + i * .2));
+        if (st > 0) { g.fillStyle = C.gold; const x0 = al === 'center' ? x - w / 2 : x; g.fillRect(x0, y - size * .3, w * st, 7 * u); }
+        g.restore();
+      });
+  }},
+  { from: 5.0, to: 7.5, draw(lt) {                                        // 03 brand: the fledgling leaves the nest
+      g.fillStyle = C.bg; g.fillRect(0, 0, W, H);
+      const carry = easeIn(seg(lt, 2.2, 2.5)), zoomOut = 1 + carry * .5;
+      g.save(); g.globalAlpha = 1 - carry; g.translate(L.cx, L.cy); g.scale(zoomOut, zoomOut); g.translate(-L.cx, -L.cy);
+      const s = spring(lt, ...SPRINGS.heavy), size = (P ? 360 : 400) * u * (1.5 - .5 * s), ey = L.cy - (P ? 190 : 150) * u;
+      g.save(); g.translate(L.cx, ey); g.rotate((1 - s) * -.25); g.globalAlpha *= clamp(s * 2);
+      if (IMG.seal) g.drawImage(IMG.seal, -size / 2, -size / 2, size, size);
+      const lift = -spring(lt - .45, ...SPRINGS.playful) * 18 * u;
+      if (IMG.bird) g.drawImage(IMG.bird, -size / 2, -size / 2 + lift, size, size);
+      g.restore();
+      const n = spring(lt - .6, ...SPRINGS.heavy);
+      text('Fledge', L.cx, ey + 200 * u + 150 * u + (1 - n) * 24 * u, 190 * u, { align: 'center', alpha: clamp(n * 1.5), weight: 500 });
+      const t2 = spring(lt - 1.1, ...SPRINGS.base);
+      text('The settlement, written down', L.cx, ey + 200 * u + 235 * u, 48 * u, { font: F.ui, color: C.ink2, align: 'center', alpha: clamp(t2 * 1.4) });
+      g.restore();
+  }},
+  { from: 7.5, to: 11.5, draw(lt) {                                       // 04 the promise card, woven
+      g.fillStyle = C.bg; g.fillRect(0, 0, W, H);
+      copy(lt, [[.7, [['Every instalment,', C.ink]]], [1.0, [['woven ', C.ink], ['in.', C.accent]]]], '16 threads. Gold is paid, red is missed.', 1.5);
+      const push = 1 + .62 * spring(lt - 1.6, 60, 18);
+      phone({ ...PH, cy: PH.cy + rise(lt), a: '03-promise', zoom: push, fx: .5, fy: .57 });
+  }},
+  { from: 11.5, to: 15.0, draw(lt) {                                      // 05 pay with Roqqu → a new gold thread
+      g.fillStyle = C.bg; g.fillRect(0, 0, W, H);
+      copy(lt, [[.15, [['Pay in naira,', C.ink]]], [.45, [['through ', C.ink], ['Roqqu.', C.accent]]]], 'Credited only after Roqqu confirms the deposit.', 2.1);
+      const slide = spring(lt - .95, ...SPRINGS.base);
+      const toPaid = seg(lt, 2.05, 2.3), push = 1 + .62 * spring(lt - 2.2, 120, 24);
+      if (lt < 2.05) {
+        const ph = phone({ ...PH, a: '04-funding', b: lt > .9 ? '06-roqqu-checkout' : null, slide });
+        const [tx, ty] = onScreen(ph, .5, .629); tap(tx, ty, lt, .5);
+        const [cx2, cy2] = onScreen(ph, .5, .43); if (lt > 1.5) tap(cx2, cy2, lt, 1.75);
+      } else {
+        phone({ ...PH, a: '06-roqqu-checkout', b: '09-promise-paid', mix: toPaid, zoom: push, fx: .5, fy: .57 });
+      }
+  }},
+  { from: 15.0, to: 19.0, draw(lt) {                                      // 06 seals stamp in
+      g.fillStyle = C.bg; g.fillRect(0, 0, W, H);
+      copy(lt, [[.2, [['Witnesses ', C.ink], ['seal', C.accent], [' it.', C.ink]]], [2.5, [['The apprentice', C.ink]]], [2.7, [['consents.', C.ink]]]], 'Each seal is a signed transaction on Base.', 3.0);
+      const push = 1 + .5 * spring(lt - .05, 90, 22);
+      const a = lt < 1.5 ? '12-seal-1' : lt < 2.5 ? '13-seal-2' : '14-payable';
+      const prev = lt < 1.5 ? null : lt < 2.5 ? '12-seal-1' : '13-seal-2';
+      const mix = lt < 1.5 ? 1 : clamp((lt - (lt < 2.5 ? 1.5 : 2.5)) / .12);
+      phone({ ...PH, a: prev || a, b: prev ? a : null, mix, zoom: push, fx: .5, fy: lt < 2.5 ? SEAL_Y : PAY_Y });
+  }},
+  { from: 19.0, to: 22.0, draw(lt) {                                      // 07 the guard
+      g.fillStyle = C.bg; g.fillRect(0, 0, W, H);
+      copy(lt, [[.15, [["The Oga can't", C.ink]]], [.4, [['cut it ', C.ink], ['alone.', C.accent]]]], 'Without the apprentice, nothing moves.', 1.0);
+      const push = 1 + .55 * spring(lt - .6, ...SPRINGS.snappy);
+      phone({ ...PH, a: '11-cut-blocked-detail', zoom: push, fx: .5, fy: CUT_Y });
+  }},
+  { from: 22.0, to: 26.0, draw(lt) {                                      // 08 payout, then the end card
+      g.fillStyle = C.bg; g.fillRect(0, 0, W, H);
+      const out = spring(lt - 1.1, ...SPRINGS.base);
+      if (lt < 1.9) {
+        g.save(); g.globalAlpha = 1 - clamp(out * 1.4);
+        copy(lt, [[.1, [['Then it ', C.ink], ['pays out.', C.accent]]]], 'Through Roqqu, or to a naira bank account.', .5);
+        g.restore();
+        phone({ ...PH, cy: PH.cy + out * H * 1.1, tilt: out * .08, a: '16-record' });
+      }
+      // End card
+      const e = spring(lt - 1.65, ...SPRINGS.heavy);
+      if (e > 0) {
+        const s = (P ? 300 : 300) * u, ey = L.cy - (P ? 240 : 170) * u;
+        g.save(); g.globalAlpha = clamp(e * 1.5);
+        g.translate(L.cx, ey); g.scale(.85 + .15 * e, .85 + .15 * e);
+        if (IMG.seal) g.drawImage(IMG.seal, -s / 2, -s / 2, s, s);
+        const lift = -Math.sin(Math.max(0, lt - 1.8) * 2.2) * 6 * u;
+        if (IMG.bird) g.drawImage(IMG.bird, -s / 2, -s / 2 + lift, s, s);
+        g.restore();
+        const n = spring(lt - 1.75, ...SPRINGS.heavy);
+        text('Fledge', L.cx, ey + s / 2 + 150 * u, 160 * u, { align: 'center', weight: 500, alpha: clamp(n * 1.5) });
+        text('The settlement, written down', L.cx, ey + s / 2 + 215 * u, 40 * u, { font: F.ui, color: C.ink2, align: 'center', alpha: clamp(spring(lt - 1.95, ...SPRINGS.base) * 1.4) });
+        const k = spring(lt - 2.05, ...SPRINGS.base);
+        text('fledge.up.railway.app', L.cx, ey + s / 2 + 285 * u, 44 * u, { font: F.ui, weight: 500, color: C.accent, align: 'center', alpha: clamp(k * 1.4) });
+        const m = spring(lt - 2.35, ...SPRINGS.base);
+        text('Base Sepolia testnet · Roqqu and bank rail simulated · demo signers', L.cx, H - (P ? 160 : 70) * u, 28 * u, { font: F.ui, color: C.mute, align: 'center', alpha: clamp(m * 1.4) });
+        cloth(H - (P ? 120 : 36) * u - (P ? 0 : 0), 1, lt * 30 * u, 18 * u, 1);
+      }
+  }},
+];
+// Where the seal row and the waiting consent sit inside their stills (fractions of the screen height).
+const SEAL_Y = .54, CUT_Y = .6, PAY_Y = .52;
+
+async function draw(t) {
+  const i = SHOTS.findIndex(s => t >= s.from && t < s.to), s = SHOTS[i === -1 ? SHOTS.length - 1 : i];
+  g.save(); s.draw(t - s.from, t, s.to - s.from); g.restore();
+  // Seams: a cloth wipe on the downbeat between shots 01→02 and 06→07; other seams are cuts on action or carries.
+  for (const at of [2.5, 19.0]) {
+    const k = seg(t, at - .2, at + .2);
+    if (k > 0 && k < 1) { const x = easeInOut(k) * (W * 2.2) - W * 1.1; g.save(); g.translate(x, 0); cloth(0, 4, 0, H / 4); g.restore(); }
+  }
+}
+window.seek = async t => { await window.ready; await draw(t); };
+
+if (!Q.has('render')) {
+  let t = 0, playing = true, last = performance.now();
+  addEventListener('click', () => playing = !playing);
+  addEventListener('keydown', e => { const d = e.shiftKey ? 1 : 1 / FILM.fps; if (e.key === 'ArrowRight') t += d; if (e.key === 'ArrowLeft') t -= d; t = loopT(t, FILM.dur); playing = false; });
+  window.ready.then(function loop(now = performance.now()) { if (playing) t = loopT(t + (now - last) / 1000, FILM.dur); last = now; draw(t); document.title = t.toFixed(2); requestAnimationFrame(loop); });
+}
+</script></body></html>
