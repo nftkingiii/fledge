@@ -1,6 +1,6 @@
 // Full flow against a running Nkwa server and an anvil chain (time is moved with evm_increaseTime).
 const B = process.env.NKWA_URL || "http://127.0.0.1:8790";
-const RPC = process.env.RPC_URL || "http://127.0.0.1:18545";
+const RPC = process.env.RPC_URL || "https://sepolia.base.org";
 const j = async (path, body) => {
   const r = await fetch(B + path, body ? { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) } : undefined);
   const t = await r.json();
@@ -40,9 +40,18 @@ console.log("Oga cuts promise, 2 witnesses ok".padEnd(34), `promised still ${p.p
 
 try { await j(`/api/promises/${id}/act`, { role: "union", action: "proposeResolution", args: { kind: "Settle", payNow: p.held, newEnd: Math.floor(Date.now() / 1000) + 3e7, note: "too early" } }); } catch (e) { console.log("settle before the date".padEnd(34), e.message.slice(0, 80)); }
 
-await rpc("evm_increaseTime", [600]);
-await rpc("evm_mine");
-const newEnd = Math.floor(Date.now() / 1000) + 600 + 365 * 86400;
+// On anvil, move time; on a public testnet, wait for the settlement date to pass.
+const anvil = (await rpc("web3_clientVersion")).result?.toLowerCase().includes("anvil");
+let skew = 0;
+if (anvil) {
+  await rpc("evm_increaseTime", [600]);
+  await rpc("evm_mine");
+  skew = 600;
+} else {
+  const end = (await j(`/api/promises/${id}`)).end;
+  while (Math.floor(Date.now() / 1000) < end + 10) await wait(5000);
+}
+const newEnd = Math.floor(Date.now() / 1000) + skew + 365 * 86400;
 await j(`/api/promises/${id}/act`, { role: "union", action: "proposeResolution", args: { kind: "Settle", payNow: p.held, newEnd, note: "Pay what is held now, the rest within 12 months" } });
 await j(`/api/promises/${id}/act`, { role: "pastor", action: "approveResolution" });
 show("witnesses agree, no consent yet", await j(`/api/promises/${id}`));

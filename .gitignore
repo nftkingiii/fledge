@@ -11,3 +11,4 @@ HACK_EVENT_GATE.json
 PROJECT_STATE.md
 SOURCES.md
 *.log
+contracts/out-deploy/

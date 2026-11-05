@@ -160,20 +160,26 @@ export async function readPromise(id) {
 }
 
 // Logs are re-derived from the chain after a restart; the cache only saves RPC calls.
-const logCache = { next: null, events: [] };
+const logCache = { next: null, events: new Map() };
+// Load-balanced RPC nodes can lag the head by a few blocks, so recent blocks are re-read.
+const REORG_MARGIN = 20n;
 
 /** Event history for one promise, read in chunks the public RPC accepts. */
 export async function timeline(id) {
-  if (logCache.next === null) logCache.next = BigInt(process.env.DEPLOY_BLOCK || 0);
+  const deployBlock = BigInt(process.env.DEPLOY_BLOCK || 0);
+  if (logCache.next === null) logCache.next = deployBlock;
   const latest = await publicClient.getBlockNumber();
-  const step = 4_000n;
-  for (let start = logCache.next; start <= latest; start += step) {
+  // sepolia.base.org caps eth_getLogs at 200 blocks per call.
+  const step = BigInt(process.env.LOG_STEP || 200);
+  const from = logCache.next - REORG_MARGIN > deployBlock ? logCache.next - REORG_MARGIN : deployBlock;
+  for (let start = from; start <= latest; start += step) {
     const end = start + step - 1n > latest ? latest : start + step - 1n;
     const chunk = await publicClient.getLogs({ address, fromBlock: start, toBlock: end });
-    logCache.events.push(...parseEventLogs({ abi, logs: chunk }));
+    for (const l of parseEventLogs({ abi, logs: chunk })) logCache.events.set(`${l.transactionHash}:${l.logIndex}`, l);
     logCache.next = end + 1n;
   }
-  return logCache.events
+  return [...logCache.events.values()]
+    .sort((a, b) => Number(a.blockNumber - b.blockNumber) || a.logIndex - b.logIndex)
     .filter((l) => l.args.id === BigInt(id))
     .map((l) => ({
       event: l.eventName,
