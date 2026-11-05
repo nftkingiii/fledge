@@ -1,10 +1,37 @@
 import React, { useId } from "react";
 
 /**
- * The Nkwa emblem: a seal of cloth. A gold sawtooth ring (the teeth of the
- * comb motif) around a maroon field, four gold diamonds at the compass
- * points, and the N cut in cream.
+ * The Fledge emblem: a seal of cloth. A gold sawtooth ring (the teeth of the
+ * comb motif) around a maroon field, and inside it a fledgling lifting out of
+ * a woven nest, its wings cut as two uli chevrons in gold and mint.
  */
+export function Fledgling({ detail = true }) {
+  return (
+    <g>
+      {/* woven nest: a bowl of crossing strokes */}
+      <path d="M17 40 C 22 49, 42 49, 47 40" fill="none" stroke="var(--cloth-gold, #e9a23b)" strokeWidth="3.2" strokeLinecap="round" />
+      {detail && (
+        <path d="M20 41 l4 5 M25 43 l3 4 M31 44 l2 4 M37 44 l-1 4 M42 42 l-3 4 M24 46 l4 -5 M30 47 l3 -4 M36 47 l3 -5"
+          stroke="var(--cloth-maroon, #5b1d1c)" strokeWidth="1.1" strokeLinecap="round" />
+      )}
+      {/* the bird, lifted clear of the nest */}
+      <g transform="translate(1 -3.5)">
+      {/* back wing, mint, raised */}
+      <path d="M30 31 L36 13 L39 28 Z" fill="var(--cloth-mint, #7fbfae)" />
+      {/* front wing, gold, raised higher with a chevron cut */}
+      <path d="M26 33 L21 14 L34 28 Z" fill="var(--cloth-gold, #e9a23b)" />
+      {/* body and tail */}
+      <path d="M23 37 C 24 30, 34 26, 40 29 C 42 31, 40 36, 34 38 C 30 39.5, 26 39.5, 23 37 Z" fill="#f6ecdc" />
+      <path d="M24 36.5 L17 39.5 L21 34.5 Z" fill="#f6ecdc" />
+      {/* head and beak */}
+      <circle cx="40.5" cy="27.5" r="4.2" fill="#f6ecdc" />
+      <path d="M44.2 26.4 L48.5 27.6 L44.4 29.2 Z" fill="var(--cloth-gold, #e9a23b)" />
+      <circle cx="41.6" cy="26.6" r="1" fill="var(--cloth-maroon, #5b1d1c)" />
+      </g>
+    </g>
+  );
+}
+
 export function Emblem({ size = 32, detail = true }) {
   const teeth = 24;
   const ring = Array.from({ length: teeth }, (_, i) => {
@@ -17,14 +44,7 @@ export function Emblem({ size = 32, detail = true }) {
       <circle cx="32" cy="32" r="31.5" fill="var(--cloth-red, #b8352f)" />
       <path d={ring} fill="var(--cloth-gold, #e9a23b)" />
       <circle cx="32" cy="32" r="23" fill="var(--cloth-maroon, #5b1d1c)" />
-      {detail && (
-        <g fill="var(--cloth-gold, #e9a23b)">
-          {[[32, 13], [51, 32], [32, 51], [13, 32]].map(([x, y]) => (
-            <path key={`${x}${y}`} d={`M${x} ${y - 2.6} L${x + 2.6} ${y} L${x} ${y + 2.6} L${x - 2.6} ${y} Z`} />
-          ))}
-        </g>
-      )}
-      <path d="M24 42V22l16 20V22" stroke="#f6ecdc" strokeWidth="4.2" fill="none" strokeLinecap="round" strokeLinejoin="round" />
+      <Fledgling detail={detail} />
     </svg>
   );
 }

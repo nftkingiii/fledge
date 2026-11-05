@@ -2,16 +2,16 @@
 pragma solidity ^0.8.24;
 
 import {Script, console} from "forge-std/Script.sol";
-import {Nkwa} from "../src/Nkwa.sol";
+import {Fledge} from "../src/Fledge.sol";
 
-/// Deploys Nkwa with the backend's operator address.
+/// Deploys Fledge with the backend's operator address.
 /// forge script script/Deploy.s.sol --rpc-url $RPC_URL --private-key $DEPLOYER_KEY --broadcast
 contract Deploy is Script {
     function run() external {
         address operator = vm.envAddress("OPERATOR_ADDRESS");
         vm.startBroadcast();
-        Nkwa nkwa = new Nkwa(operator);
+        Fledge fledge = new Fledge(operator);
         vm.stopBroadcast();
-        console.log("Nkwa", address(nkwa));
+        console.log("Fledge", address(fledge));
     }
 }

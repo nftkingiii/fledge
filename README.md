@@ -1,17 +1,17 @@
-# Nkwa
+# Fledge
 
 **The Igba-boi settlement, written down.**
 
 In the Igbo apprenticeship system (Igba-boi), a boy serves an Oga for years in return for a promised *settlement*: the capital to open his own shop. That promise is usually spoken and unrecorded. Settlements come late, shrink, or never come, and the apprentice has nothing to show his family or the market union. Most masters also can't lock the money up on day one; they pay it out of profits over the years.
 
-Nkwa ("promise" in Igbo) records the promise on day one, lets the Oga fund it gradually in naira through Roqqu, and lets money leave only through a resolution that the apprentice consents to and a quorum of witnesses approves.
+A young bird *fledges* when it is ready to leave the nest. Fledge records the settlement promise on day one, lets the Oga fund it gradually in naira through Roqqu, and lets money leave only through a resolution that the apprentice consents to and a quorum of witnesses approves.
 
 Anambra Web3 Hackathon 2026 · DeFi track.
 
 ## How it works
 
 1. **The promise.** The Oga sets the amount, the term, an instalment schedule and named witnesses (market union, family, church). The apprentice accepts it on chain.
-2. **Gradual funding through Roqqu.** Each instalment is a Roqqu payment link priced in naira and paid in USDT. When Roqqu's webhook arrives, Nkwa decrypts it, checks the deposit with Roqqu by its hash, and only then credits the promise on chain.
+2. **Gradual funding through Roqqu.** Each instalment is a Roqqu payment link priced in naira and paid in USDT. When Roqqu's webhook arrives, Fledge decrypts it, checks the deposit with Roqqu by its hash, and only then credits the promise on chain.
 3. **Arrears are visible early.** The contract knows what should have been paid by now, so the witnesses see a missed quarter years before settlement day.
 4. **Settlement day, even when the money isn't all there.** Anyone on the promise can propose a resolution:
    - pay what is held now and set a new date for the rest,
@@ -28,10 +28,10 @@ Anambra Web3 Hackathon 2026 · DeFi track.
 
 | Part | Status |
 | --- | --- |
-| Nkwa contract on Base Sepolia | Deployed, source verified (Sourcify exact match) |
+| Fledge contract on Base Sepolia | Deployed, source verified (Sourcify exact match) |
 | Funding, arrears, resolutions, payouts, record | On chain, exercised through the web app's API |
 | Roqqu exchange rate | Live from Roqqu's public `/rates` |
-| Roqqu payment links, webhooks, deposit checks, sends | **Simulated.** Roqqu said hackathon keys only grant simulations, so Nkwa ships a Roqqu simulator that speaks the documented formats (including the aes-256-ctr webhook encryption). Nkwa calls it over HTTP through the same client it uses for `service.roqqu.com`; only the base URL and key differ. |
+| Roqqu payment links, webhooks, deposit checks, sends | **Simulated.** Roqqu said hackathon keys only grant simulations, so Fledge ships a Roqqu simulator that speaks the documented formats (including the aes-256-ctr webhook encryption). Fledge calls it over HTTP through the same client it uses for `service.roqqu.com`; only the base URL and key differ. |
 | Oga, apprentice and witness signatures | **Demo signers.** The server signs for each role so the flow can be shown in one browser. In production each person signs with their own wallet. |
 | Seeded history | The demo promise starts with one credit labelled `SEED-history` so arrears are visible immediately. |
 
@@ -43,10 +43,12 @@ The simulator has an outage switch. During an outage no instalment link can be c
 
 ## Evidence
 
-- Contract: [`0x6bc6d3ffee0f602edb792a1ebfa07e95a9f541d7`](https://sepolia.basescan.org/address/0x6bc6d3ffee0f602edb792a1ebfa07e95a9f541d7) on Base Sepolia, verified on [Sourcify](https://repo.sourcify.dev/84532/0x6bc6d3ffee0f602edb792a1ebfa07e95a9f541d7).
-- Deploy tx: [`0x28d5…cc75`](https://sepolia.basescan.org/tx/0x28d5079ad2cde31e6744b06c7513b727ce30115faffd98b067cb2244ed02cc75).
-- Full flow on Base Sepolia (promise #2): seeded arrears → exact Roqqu payment credited → underpayment refused → link refused during outage → the Oga's attempt to cut the promise stays open without the apprentice → settlement before the date refused → 60% settlement applied after the apprentice consented → payout recorded ([PaidOut tx](https://sepolia.basescan.org/tx/0x1f44ca87492cf9e008ff9b5c1e1bfeeb5efd8ba874ae2bced27e6d5c3daeb45a)). The remaining 40% rolls into a 12-month plan.
-- Contract tests: 16 Foundry tests, including every adverse case above (`contracts/test/Nkwa.t.sol`).
+- Contract: [`0x82fff61ae4b5344149a895b4259f8f4701d9abc2`](https://sepolia.basescan.org/address/0x82fff61ae4b5344149a895b4259f8f4701d9abc2) on Base Sepolia, verified on [Sourcify](https://repo.sourcify.dev/84532/0x82fff61ae4b5344149a895b4259f8f4701d9abc2) (exact match).
+- Deploy tx: [`0x60a5…45cb`](https://sepolia.basescan.org/tx/0x60a5d1c209abdc809fc801f3b3c842fe8d4391890fbeb7f8a4c8747c97ac45cb).
+- Live app: https://fledge.up.railway.app
+- Full flow on Base Sepolia (promise #1): seeded arrears → exact Roqqu payment credited → underpayment refused → link refused during a Roqqu outage → the Oga's attempt to cut the promise stays open without the apprentice → settlement before the date refused → 60% settlement applied after the apprentice consented ([tx](https://sepolia.basescan.org/tx/0x8bc1c39d8f088864f70d4821ac64f74204e921086323ab94721d36ab9622b2d8)) → payout recorded ([PaidOut tx](https://sepolia.basescan.org/tx/0x07a95db1b2211b409741b58f34efefa8390f0f972cc9e032018956e938571514)). The remaining 40% rolls into a 12-month plan.
+- Each witness seal is that witness's own `approveResolution` transaction, from their own address; the apprentice's consent is a `consentResolution` transaction.
+- Contract tests: 16 Foundry tests, including every adverse case above (`contracts/test/Fledge.t.sol`).
 
 ## Run it
 
@@ -64,6 +66,6 @@ cd ../server && node --env-file=.env src/index.js   # http://localhost:8790
 
 ## Layout
 
-- `contracts/` — `Nkwa.sol`, tests, deploy script
+- `contracts/` — `Fledge.sol`, tests, deploy script
 - `server/` — Express API, Roqqu client, Roqqu simulator, chain access (viem)
 - `web/` — React app: Promise, Funding, Settlement and Record tabs

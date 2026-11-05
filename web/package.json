@@ -1,5 +1,5 @@
 {
-  "name": "nkwa-web",
+  "name": "fledge-web",
   "private": true,
   "type": "module",
   "scripts": {

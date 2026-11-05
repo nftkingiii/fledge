@@ -1,12 +1,12 @@
-// Deploys Nkwa to Base Sepolia from the Foundry artifact, gives the operator and demo
-// roles gas, and writes NKWA_ADDRESS / DEPLOY_BLOCK into server/.env.
+// Deploys Fledge to Base Sepolia from the Foundry artifact, gives the operator and demo
+// roles gas, and writes FLEDGE_ADDRESS / DEPLOY_BLOCK into server/.env.
 // node --env-file=.env scripts/deploy.mjs
 import fs from "node:fs";
 import { createPublicClient, createWalletClient, http, parseEther, formatEther } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
 import { baseSepolia } from "viem/chains";
 
-const artifact = JSON.parse(fs.readFileSync(new URL("../../contracts/out-deploy/Nkwa.json", import.meta.url)));
+const artifact = JSON.parse(fs.readFileSync(new URL("../../contracts/out-deploy/Fledge.json", import.meta.url)));
 const transport = http(process.env.RPC_URL);
 const pub = createPublicClient({ chain: baseSepolia, transport });
 const deployer = privateKeyToAccount(process.env.DEPLOYER_KEY);
@@ -14,7 +14,7 @@ const wallet = createWalletClient({ account: deployer, chain: baseSepolia, trans
 const operator = privateKeyToAccount(process.env.OPERATOR_KEY);
 const roles = process.env.DEMO_KEYS.split(",").map((k) => privateKeyToAccount(k.trim()));
 
-let address = process.env.NKWA_ADDRESS;
+let address = process.env.FLEDGE_ADDRESS;
 let block = process.env.DEPLOY_BLOCK;
 if (!address) {
   const hash = await wallet.deployContract({ abi: artifact.abi, bytecode: artifact.bytecode.object, args: [operator.address] });
@@ -23,7 +23,7 @@ if (!address) {
   block = String(receipt.blockNumber);
   console.log("deployed", address, "block", block, "tx", hash);
   const env = fs.readFileSync(".env", "utf8")
-    .replace(/^NKWA_ADDRESS=.*$/m, `NKWA_ADDRESS=${address}`)
+    .replace(/^FLEDGE_ADDRESS=.*$/m, `FLEDGE_ADDRESS=${address}`)
     .replace(/^DEPLOY_BLOCK=.*$/m, "") + `DEPLOY_BLOCK=${block}\n`;
   fs.writeFileSync(".env", env.replace(/\n{3,}/g, "\n\n"));
 }

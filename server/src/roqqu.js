@@ -99,5 +99,5 @@ export function decryptWebhook(hashHex, ivHex) {
 /** Payment references must be 1-20 letters and numbers. */
 export function instalmentReference(promiseId) {
   const rand = crypto.randomBytes(4).toString("hex").toUpperCase();
-  return `NKWA${promiseId}P${rand}`.slice(0, 20);
+  return `FLEDGE${promiseId}P${rand}`.slice(0, 20);
 }

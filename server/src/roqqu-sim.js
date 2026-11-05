@@ -4,7 +4,7 @@ import express from "express";
 /**
  * A stand-in for Roqqu API Services that speaks the same formats as the docs at
  * roqqu-api-services.gitbook.io: payment links, encrypted webhooks, deposit
- * lookups and sends. Nkwa talks to it over HTTP through the same client it would
+ * lookups and sends. Fledge talks to it over HTTP through the same client it would
  * use against service.roqqu.com, so only the base URL and key differ.
  *
  * It also has an outage switch, because providers go down.

@@ -44,7 +44,7 @@ app.use("/api", express.json({ limit: "16kb" }));
 
 // Plain-language reasons for the contract's refusals.
 const REFUSALS = {
-  NotOperator: "Only the Nkwa operator can do that.",
+  NotOperator: "Only the Fledge operator can do that.",
   NotParty: "This person is not allowed to do that on this promise.",
   NotWitness: "Only a named witness can do that.",
   BadState: "The promise is not in a state that allows this.",
@@ -112,7 +112,7 @@ app.post("/api/promises/:id/link", wrap(async (req, res) => {
     amountNgn,
     reference,
     promiseId: id,
-    oga: { email: req.body?.email || "oga@nkwa.app", firstName: "Oga", lastName: `Promise${id}` },
+    oga: { email: req.body?.email || "oga@fledge.app", firstName: "Oga", lastName: `Promise${id}` },
     successUrl: `${PUBLIC_URL}/?promise=${id}&paid=1`,
     cancelUrl: `${PUBLIC_URL}/?promise=${id}`,
     expiresAt: new Date(Date.now() + 24 * 3600e3).toISOString(),
@@ -137,7 +137,7 @@ app.post("/webhooks/roqqu", wrap(async (req, res) => {
 
 async function handleRoqquEvent(event) {
   const m = event.meta_data || {};
-  const promiseId = Number(m.metadata?.promiseId ?? String(m.payment_reference || "").match(/^NKWA(\d+)P/)?.[1]);
+  const promiseId = Number(m.metadata?.promiseId ?? String(m.payment_reference || "").match(/^FLEDGE(\d+)P/)?.[1]);
   if (!promiseId) return;
   const entry = { promiseId, type: event.event_type, reference: m.payment_reference, hash: m.hash, at: event.datetime };
   roqquEvents.unshift(entry);
@@ -276,7 +276,7 @@ app.get(/^\/(?!api|webhooks).*/, (_req, res) => res.sendFile(path.join(web, "ind
 // The simulator lives on this server, so check Roqqu only once we are listening.
 app.listen(PORT, () => {
   checkRoqqu().finally(() => {
-    console.log(`Nkwa on ${PUBLIC_URL} | contract ${chain.contractAddress() || "not set"} | Roqqu ${MODE} ${roqquState.connected ? "connected" : "unavailable"}: ${roqquState.reason}`);
+    console.log(`Fledge on ${PUBLIC_URL} | contract ${chain.contractAddress() || "not set"} | Roqqu ${MODE} ${roqquState.connected ? "connected" : "unavailable"}: ${roqquState.reason}`);
   });
 });
 setInterval(checkRoqqu, 10 * 60_000).unref();

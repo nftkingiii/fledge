@@ -1,5 +1,5 @@
-// Full flow against a running Nkwa server and an anvil chain (time is moved with evm_increaseTime).
-const B = process.env.NKWA_URL || "http://127.0.0.1:8790";
+// Full flow against a running Fledge server and an anvil chain (time is moved with evm_increaseTime).
+const B = process.env.FLEDGE_URL || "http://127.0.0.1:8790";
 const RPC = process.env.RPC_URL || "https://sepolia.base.org";
 const j = async (path, body) => {
   const r = await fetch(B + path, body ? { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) } : undefined);

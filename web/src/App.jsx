@@ -4,7 +4,7 @@ import { Cloth, Seal, Mark, Stripe, CLOTH } from "./patterns.jsx";
 import { BackgroundArt, Figurehead } from "./art.jsx";
 import SignIn from "./signin.jsx";
 
-const SESSION_KEY = "nkwa.session";
+const SESSION_KEY = "fledge.session";
 const readSession = () => {
   try {
     return JSON.parse(localStorage.getItem(SESSION_KEY) || "null");
@@ -180,7 +180,7 @@ export default function App() {
     <div className="app">
       <BackgroundArt />
       <nav className="rail" aria-label="Sections">
-        <div className="rail-brand"><Mark /><span>Nkwa</span></div>
+        <div className="rail-brand"><Mark /><span>Fledge</span></div>
         {TABS.map(([k, label, Icon]) => (
           <button key={k} className={`rail-item ${tab === k ? "on" : ""}`} onClick={() => setTab(k)} aria-current={tab === k ? "page" : undefined}>
             <Icon size={18} strokeWidth={1.5} /><span>{label}</span>
@@ -190,7 +190,7 @@ export default function App() {
 
       <div className="main">
         <header className="topbar">
-          <div className="brand"><Mark size={26} /><span>Nkwa</span></div>
+          <div className="brand"><Mark size={26} /><span>Fledge</span></div>
           <button className="picker" onClick={() => setSheet("promises")}>
             <span>{promise ? `No. ${promise.id} · ${promise.trade}` : "Promises"}</span>
             <ChevronDown size={16} strokeWidth={1.5} />
@@ -276,7 +276,7 @@ function Welcome({ onStart, busy }) {
       </div>
       <div className="welcome-text">
         <h1>The settlement, written down</h1>
-        <p>An Oga promises his apprentice a settlement for his years of service. Nkwa records that promise, lets the Oga fund it a little at a time through Roqqu, and releases it only when the apprentice and the witnesses agree.</p>
+        <p>An Oga promises his apprentice a settlement for his years of service. Fledge records that promise, lets the Oga fund it a little at a time through Roqqu, and releases it only when the apprentice and the witnesses agree.</p>
         <button className="btn primary" disabled={busy} onClick={onStart}>{busy ? "Writing the promise" : "Write a demo promise"}</button>
         <small>Creates a four-year promise that comes due in 10 minutes, on Base Sepolia</small>
       </div>

@@ -34,10 +34,10 @@ export default function SignIn({ onDone }) {
         <div className="capsule">
           <LoopArrow />
           <Emblem size={132} />
-          <p className="capsule-name">Nkwa</p>
+          <p className="capsule-name">Fledge</p>
           <p className="capsule-tag">The settlement, written down</p>
         </div>
-        <a className="auth-social" href="https://github.com/nftkingiii/nkwa" target="_blank" rel="noreferrer" aria-label="Nkwa on GitHub">
+        <a className="auth-social" href="https://github.com/nftkingiii/fledge" target="_blank" rel="noreferrer" aria-label="Fledge on GitHub">
           <Github size={16} strokeWidth={1.5} />
         </a>
       </aside>
@@ -63,7 +63,7 @@ export default function SignIn({ onDone }) {
           )}
           <button className="auth-submit" type="submit" disabled={!role}>{mode === "up" ? "Sign up" : "Sign in"}</button>
           <p className="auth-switch">
-            {mode === "up" ? "Already a member?" : "New to Nkwa?"}{" "}
+            {mode === "up" ? "Already a member?" : "New to Fledge?"}{" "}
             <button type="button" onClick={() => setMode(mode === "up" ? "in" : "up")}>{mode === "up" ? "Sign in now" : "Sign up"}</button>
           </p>
           <p className="auth-demo">Demo: you will act as one of the five people on the demo promise. Nothing you type leaves this browser.</p>

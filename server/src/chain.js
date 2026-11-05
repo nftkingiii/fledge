@@ -52,7 +52,7 @@ export const abi = parseAbi([
 export const KINDS = ["Settle", "InKind", "Extend", "EarlyExit", "Reduce"];
 export const STATUS = ["None", "Proposed", "Active", "Closed"];
 
-const address = process.env.NKWA_ADDRESS;
+const address = process.env.FLEDGE_ADDRESS;
 const transport = http(process.env.RPC_URL || baseSepolia.rpcUrls.default.http[0]);
 // Reads issued together go out as one Multicall3 call, which keeps the public RPC's rate limit at bay.
 export const publicClient = createPublicClient({ chain: baseSepolia, transport, batch: { multicall: true } });

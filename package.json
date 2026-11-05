@@ -1,5 +1,5 @@
 {
-  "name": "nkwa",
+  "name": "fledge",
   "private": true,
   "scripts": {
     "build": "npm --prefix web ci && npm --prefix web run build && npm --prefix server ci --omit=dev",
