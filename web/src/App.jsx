@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import { ScrollText, Coins, Scale, BookOpen, ChevronDown, ExternalLink, Info, Check, X } from "lucide-react";
 import { Cloth, Seal, Mark, Stripe, CLOTH } from "./patterns.jsx";
-import { BackgroundArt } from "./art.jsx";
+import { BackgroundArt, Figurehead } from "./art.jsx";
 import SignIn from "./signin.jsx";
 
 const SESSION_KEY = "nkwa.session";
@@ -196,7 +196,7 @@ export default function App() {
             <ChevronDown size={16} strokeWidth={1.5} />
           </button>
           <button className="who" onClick={() => setSheet("role")} title="Who you are acting as">
-            <span className="avatar" data-role={role}>{initials(myName)}</span>
+            <Figurehead role={role} size={32} />
             <span className="who-text"><small>Acting as</small>{myName}</span>
             <ChevronDown size={16} strokeWidth={1.5} />
           </button>
@@ -208,10 +208,8 @@ export default function App() {
           <div className="loading">Loading promise</div>
         ) : (
           <div className={`stage tab-${tab}`}>
-            <aside className="card-col">
-              <PromiseCard p={promise} naira={naira} config={config} />
-            </aside>
             <section className="pane" key={tab}>
+              {tab === "promise" && <PromiseCard p={promise} naira={naira} config={config} />}
               {tab === "promise" && <PromiseTab p={promise} naira={naira} config={config} />}
               {tab === "funding" && <FundingTab p={promise} naira={naira} config={config} busy={busy} run={run} />}
               {tab === "settle" && <SettleTab p={promise} naira={naira} config={config} role={role} busy={busy} act={act} run={run} ngn={ngn} />}
@@ -234,7 +232,7 @@ export default function App() {
           <p className="sheet-note">Demo signers: the server signs for each person so the whole flow fits in one browser. In use, each person signs from their own phone.</p>
           {ROLES.map(([k, kind, name]) => (
             <button key={k} className={`sheet-row ${role === k ? "on" : ""}`} onClick={() => { setRole(k); setSheet(null); }}>
-              <span className="avatar" data-role={k}>{initials(name)}</span>
+              <Figurehead role={k} size={40} />
               <span className="grow"><b>{name}</b><small>{kind}</small></span>
               {role === k && <Check size={18} strokeWidth={1.5} />}
             </button>
@@ -337,6 +335,7 @@ function PromiseCard({ p, naira, config }) {
     <article className="pcard">
       <Cloth stripes={CLOTH.slice(0, 3)} height={18} size={18} />
       <div className="pcard-body">
+        <div className="pcard-id">
         <div className="pcard-head">
           <span>Promise No. {p.id}</span>
           <span className={`status ${settled ? "ok" : plan ? "warn" : p.arrears > 0 ? "bad" : "ok"}`}>
@@ -348,14 +347,19 @@ function PromiseCard({ p, naira, config }) {
         <p className="pcard-sub">
           to {apprentice ? roleOf(apprentice[0])[2] : short(p.apprentice)}, by {date(p.end)}
         </p>
+        </div>
+        <div className="pcard-fund">
+        <div className="pcard-funded"><span>Funded so far</span><b>{naira(funded)}</b></div>
         <div className="weave" role="img" aria-label={`${paid} of ${p.instalments} instalments paid, ${Math.max(0, due - paid)} missed`}>
           {Array.from({ length: p.instalments }, (_, i) => (
             <i key={i} className={i < paid ? "paid" : i < due ? "missed" : ""} />
           ))}
         </div>
         <div className="pcard-foot">
-          <span><b>{naira(funded)}</b> funded</span>
-          <span>{paid} of {p.instalments} paid{due > paid ? ` · ${due - paid} missed` : ""}</span>
+          <span><i className="key paid" />{paid} paid</span>
+          {due > paid && <span><i className="key missed" />{due - paid} missed</span>}
+          <span><i className="key" />{p.instalments - Math.max(paid, due)} to come</span>
+        </div>
         </div>
       </div>
     </article>
@@ -367,7 +371,7 @@ function Who({ address, config }) {
   const r = k && roleOf(k);
   return (
     <span className="whois">
-      {r && <span className="avatar sm" data-role={k}>{initials(r[2])}</span>}
+      {r && <Figurehead role={k} size={36} />}
       <span><b>{r ? r[2] : "Unknown"}</b><a className="mono" href={`${config.explorer}/address/${address}`} target="_blank" rel="noreferrer">{short(address)}</a></span>
     </span>
   );
@@ -375,7 +379,8 @@ function Who({ address, config }) {
 
 function PromiseTab({ p, naira, config }) {
   return (
-    <>
+    <div className="promise-grid">
+      <div className="col">
       <h3>Terms</h3>
       <dl className="terms">
         <div><dt>Promised</dt><dd>{naira(p.promised)} <small>${p.promised.toLocaleString()} in dollar stablecoin</small></dd></div>
@@ -383,14 +388,17 @@ function PromiseTab({ p, naira, config }) {
         <div><dt>Schedule</dt><dd>{p.instalments} instalments of {naira(p.original / p.instalments)}</dd></div>
         <div><dt>Decided by</dt><dd>The apprentice and {p.quorum} of {p.witnesses.length} witnesses</dd></div>
       </dl>
+      <p className="rule">Money paid in cannot go back to the Oga on his word alone. It leaves only through a resolution the apprentice consents to and {p.quorum} witnesses approve.</p>
+      </div>
+      <div className="col">
       <h3>People</h3>
       <ul className="people">
         <li><Who address={p.oga} config={config} /><span className="tag">Oga</span></li>
         <li><Who address={p.apprentice} config={config} /><span className="tag">Apprentice</span></li>
         {p.witnesses.map((w) => <li key={w.address}><Who address={w.address} config={config} /><span className="tag">Witness</span></li>)}
       </ul>
-      <p className="rule">Money paid in cannot go back to the Oga on his word alone. It leaves only through a resolution the apprentice consents to and {p.quorum} witnesses approve.</p>
-    </>
+      </div>
+    </div>
   );
 }
 

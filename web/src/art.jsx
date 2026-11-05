@@ -29,6 +29,73 @@ export function Emblem({ size = 32, detail = true }) {
   );
 }
 
+/**
+ * Figurehead avatars: a bust on a patterned disc, each person with their own
+ * cloth and headpiece. The Oga wears the red chief's cap, the pastor a white
+ * collar, the market union a gele-style wrap, the uncle a flat cap.
+ */
+const FIGURES = {
+  oga: { ground: "var(--cloth-gold)", tile: "maroon", cloth: "var(--cloth-red)", trim: "var(--cloth-gold)", hat: "chief" },
+  apprentice: { ground: "var(--cloth-slate)", tile: "mint", cloth: "var(--cloth-gold)", trim: "var(--cloth-maroon)", hat: "none" },
+  union: { ground: "var(--cloth-red)", tile: "gold", cloth: "var(--cloth-slate)", trim: "var(--cloth-mint)", hat: "wrap" },
+  uncle: { ground: "var(--cloth-mint)", tile: "slate", cloth: "var(--cloth-maroon)", trim: "var(--cloth-gold)", hat: "flat" },
+  pastor: { ground: "var(--cloth-maroon)", tile: "gold", cloth: "#2a2622", trim: "#f6ecdc", hat: "collar" },
+};
+
+export function Figurehead({ role = "apprentice", size = 32 }) {
+  const id = useId().replace(/:/g, "");
+  const f = FIGURES[role] || FIGURES.apprentice;
+  const tileInk = `var(--cloth-${f.tile})`;
+  const skin = "#5a3826";
+  return (
+    <svg width={size} height={size} viewBox="0 0 64 64" className="figurehead" aria-hidden="true">
+      <defs>
+        <clipPath id={`c${id}`}><circle cx="32" cy="32" r="32" /></clipPath>
+        <pattern id={`g${id}`} width="10" height="10" patternUnits="userSpaceOnUse">
+          <rect width="10" height="10" fill={f.ground} />
+          <path d="M0 5 L5 0 L10 5 L5 10 Z" fill="none" stroke={tileInk} strokeWidth="1.2" />
+          <circle cx="5" cy="5" r="1.1" fill={tileInk} />
+        </pattern>
+        <pattern id={`k${id}`} width="8" height="8" patternUnits="userSpaceOnUse">
+          <rect width="8" height="8" fill={f.cloth} />
+          <path d="M0 8 L4 3 L8 8" fill="none" stroke={f.trim} strokeWidth="1.3" />
+        </pattern>
+      </defs>
+      <g clipPath={`url(#c${id})`}>
+        <rect width="64" height="64" fill={`url(#g${id})`} />
+        {/* shoulders in patterned cloth */}
+        <path d="M8 66 C 10 48, 20 42, 32 42 C 44 42, 54 48, 56 66 Z" fill={`url(#k${id})`} />
+        <path d="M24 43 L32 51 L40 43" fill="none" stroke={f.trim} strokeWidth="2" />
+        {/* neck and head */}
+        <rect x="28" y="34" width="8" height="10" rx="3" fill={skin} />
+        <ellipse cx="32" cy="27" rx="10" ry="11.5" fill={skin} />
+        {f.hat === "chief" && (
+          <g>
+            <path d="M21 22 C 21 11, 43 11, 43 22 Z" fill="var(--cloth-red)" />
+            <path d="M23 19 h18" stroke="var(--cloth-gold)" strokeWidth="1.6" strokeDasharray="2 2" />
+            <rect x="21" y="20.5" width="22" height="3.5" rx="1.5" fill="var(--cloth-maroon)" />
+          </g>
+        )}
+        {f.hat === "wrap" && (
+          <g>
+            <path d="M19 24 C 15 10, 30 6, 36 9 C 47 6, 52 18, 44 24 C 38 20, 26 20, 19 24 Z" fill="var(--cloth-gold)" />
+            <path d="M24 16 C 30 12, 38 12, 44 17 M22 20 C 30 16, 38 16, 45 21" fill="none" stroke="var(--cloth-red)" strokeWidth="1.6" />
+          </g>
+        )}
+        {f.hat === "flat" && <path d="M21 21 C 22 13, 42 13, 43 20 L47 22 C 40 21, 28 21, 21 21 Z" fill="var(--cloth-slate)" />}
+        {f.hat === "none" && <path d="M22 24 C 21 15, 43 15, 42 24 C 39 18, 25 18, 22 24 Z" fill="#1d1410" />}
+        {f.hat === "collar" && (
+          <g>
+            <path d="M22 23 C 21 15, 43 15, 42 23 C 39 18, 25 18, 22 23 Z" fill="#1d1410" />
+            <rect x="29" y="43" width="6" height="4" rx="1" fill="#f6ecdc" />
+          </g>
+        )}
+      </g>
+      <circle cx="32" cy="32" r="31" fill="none" stroke="rgba(0,0,0,0.12)" strokeWidth="1" />
+    </svg>
+  );
+}
+
 /** One rosette: rings of petals, dots and teeth, like a medallion in printed cloth. */
 function Rosette({ cx, cy, r }) {
   const petals = 16;

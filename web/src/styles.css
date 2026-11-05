@@ -358,8 +358,8 @@ input {
 .bg-ink-a { stroke: var(--cloth-red); fill: var(--cloth-red); opacity: 0.16; }
 .bg-ink-b { stroke: var(--cloth-slate); opacity: 0.18; }
 @media (prefers-color-scheme: dark) {
-  .bg-ink-a { stroke: var(--cloth-gold); fill: var(--cloth-gold); opacity: 0.11; }
-  .bg-ink-b { stroke: var(--cloth-mint); opacity: 0.11; }
+  .bg-ink-a { stroke: #f0b45a; fill: #f0b45a; opacity: 0.26; }
+  .bg-ink-b { stroke: #8fd3c1; opacity: 0.24; }
 }
 .app > *:not(.bg-art):not(.scrim):not(.toast):not(.tabbar):not(.rail), .splash > *:not(.bg-art), .welcome > *:not(.bg-art) { position: relative; z-index: 1; }
 .emblem { display: block; flex: none; }
@@ -419,3 +419,38 @@ input {
   .auth-social { left: 20px; bottom: 20px; }
   .auth-form { place-items: center; padding: 48px; }
 }
+
+/* Grid children may not grow past the screen: the chip row scrolls inside its own box. */
+.stage, .pane { min-width: 0; }
+.stage > *, .pane > *, .propose[open] > *, .resolution > * { min-width: 0; }
+.stage { grid-template-columns: minmax(0, 1fr); }
+
+/* ---- the promise as a balance card, Promise tab only ---- */
+.pcard-id, .pcard-fund { display: grid; gap: 8px; align-content: start; }
+.pcard-funded { display: grid; gap: 2px; }
+.pcard-funded span { font-size: 13px; color: var(--muted); }
+.pcard-funded b { font-size: 24px; line-height: 30px; font-weight: 500; font-variant-numeric: tabular-nums; }
+.pcard-foot { justify-content: flex-start; gap: 16px; flex-wrap: wrap; }
+.key { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 6px; vertical-align: -1px; background: var(--raised); }
+.key.paid { background: var(--cloth-gold); }
+.key.missed { box-shadow: inset 0 0 0 1px var(--neg); background: var(--neg-soft); }
+.figurehead { display: block; flex: none; border-radius: 50%; }
+.promise-grid { display: grid; gap: 16px; }
+.promise-grid .col { display: grid; gap: 16px; align-content: start; min-width: 0; }
+.promise-grid h3 { font-size: 15px; }
+
+@media (min-width: 900px) {
+  .pcard-body { grid-template-columns: minmax(0, 1fr) minmax(0, 1.1fr); gap: 40px; padding: 28px 32px; align-items: end; }
+  .pcard .figure { font-size: 56px; letter-spacing: -0.03em; }
+  .pcard-fund .weave { height: 40px; }
+  .promise-grid { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 32px; }
+}
+
+/* <details> does not lay its children out as grid items, so use block flow and let the chips scroll inside. */
+.propose[open] { display: block; }
+.propose[open] > * + * { margin-top: 12px; }
+.propose .kinds { margin-left: 0; margin-right: 0; padding: 0; max-width: 100%; }
+.propose .fields, .propose .btn { max-width: 100%; }
+
+/* Line art stays line art: only the dot ring is filled. */
+.bg-art path { fill: none; }
