@@ -5,6 +5,8 @@ import crypto from "node:crypto";
 import * as roqqu from "./roqqu.js";
 import * as chain from "./chain.js";
 import { createRoqquSim } from "./roqqu-sim.js";
+import * as naira from "./naira.js";
+import { createNairaSim, verifyNairaSignature } from "./naira-sim.js";
 
 const app = express();
 const PORT = Number(process.env.PORT || 8790);
@@ -21,6 +23,12 @@ if (MODE === "simulated") {
   sim = createRoqquSim({ key: process.env.ROQQU_API_KEY, publicUrl: PUBLIC_URL, webhookUrl: `${INTERNAL_URL}/webhooks/roqqu` });
   app.use("/sim/roqqu", sim.router);
 }
+
+// The naira bank rail. Roqqu API Services has no naira endpoints, so this is always the stand-in for now.
+process.env.NAIRA_KEY ||= crypto.randomBytes(32).toString("hex");
+process.env.NAIRA_BASE ||= `${INTERNAL_URL}/sim/naira/v1`;
+const nairaSim = createNairaSim({ secret: process.env.NAIRA_KEY, publicUrl: PUBLIC_URL, webhookUrl: `${INTERNAL_URL}/webhooks/naira` });
+app.use("/sim/naira", nairaSim.router);
 
 // "connected" only after an authenticated call to whichever Roqqu we point at succeeds.
 const roqquState = { connected: false, mode: MODE, reason: "not checked yet", checkedAt: null };
@@ -39,6 +47,18 @@ const roqquEvents = [];
 // Confirmed payments that could not be credited yet, e.g. Roqqu or the RPC was down.
 const retryQueue = [];
 
+// The naira webhook is signed over its raw bytes, so it must read the body before the JSON parser does.
+app.post("/webhooks/naira", express.raw({ type: "application/json", limit: "64kb" }), (req, res) => {
+  if (!verifyNairaSignature(req.body, req.get("x-signature"), process.env.NAIRA_KEY)) return res.status(401).json({ error: "bad signature" });
+  res.json({ ok: true });
+  let event;
+  try {
+    event = JSON.parse(req.body.toString("utf8"));
+  } catch {
+    return;
+  }
+  handleNairaEvent(event).catch((e) => console.error("naira webhook", e.message));
+});
 app.use("/webhooks", express.json({ limit: "64kb" }));
 app.use("/api", express.json({ limit: "16kb" }));
 
@@ -124,6 +144,7 @@ app.post("/api/promises/:id/link", wrap(async (req, res) => {
 app.post("/api/sim/outage", wrap(async (req, res) => {
   if (!sim) throw new Error("Not running the Roqqu simulator");
   sim.state.outage = Boolean(req.body?.on);
+  nairaSim.state.outage = sim.state.outage;
   res.json({ outage: sim.state.outage });
 }));
 
@@ -149,12 +170,12 @@ async function handleRoqquEvent(event) {
   }
   if (event.event_type !== "payment_link_completed" && event.event_type !== "payment_link_completed_overpaid") return;
   if (event.event_type === "payment_link_completed_overpaid") entry.note = `Overpaid by ${m.overpaid_amount} USDT; the full amount is credited.`;
-  await creditWithRetry({ entry, promiseId, m });
+  await creditWithRetry({ entry, run: () => confirmAndCredit({ entry, promiseId, m }) });
 }
 
 async function creditWithRetry(job) {
   try {
-    await confirmAndCredit(job);
+    await job.run();
   } catch (e) {
     // Roqqu or the chain is unavailable: keep the job and try again; the ref keeps it from crediting twice.
     job.entry.note = `Waiting to credit: ${e.message}`;
@@ -183,7 +204,7 @@ async function confirmAndCredit({ entry, promiseId, m }) {
 setInterval(async () => {
   for (const job of [...retryQueue]) {
     try {
-      await confirmAndCredit(job);
+      await job.run();
       retryQueue.splice(retryQueue.indexOf(job), 1);
     } catch (e) {
       job.entry.note = `Waiting to credit: ${e.message}`;
@@ -191,17 +212,90 @@ setInterval(async () => {
   }
 }, 15_000).unref();
 
-// ---- payouts through Roqqu ----
+// ---- naira in: bank transfer to a one-time account, converted at Roqqu's rate ----
+
+app.post("/api/promises/:id/naira-link", wrap(async (req, res) => {
+  const id = Number(req.params.id);
+  const p = await chain.readPromise(id);
+  if (!p || p.status !== "Active") throw new Error("Promise is not active");
+  const rate = await roqqu.ngnPerUsd();
+  const usd = req.body?.amountUsd ? Number(req.body.amountUsd) : p.original / p.instalments;
+  if (!(usd > 0)) throw new Error("Amount must be positive");
+  const c = await naira.createCollection({
+    amount_ngn: Math.round(usd * rate),
+    reference: naira.reference(id, "N"),
+    metadata: { promiseId: id, return_url: `${PUBLIC_URL}/?promise=${id}&paid=1` },
+  });
+  res.json({ amountNgn: c.amount_ngn, rate, reference: c.reference, bankName: c.bank_name, accountNumber: c.account_number, accountName: c.account_name, link: c.checkout_url, expiresAt: c.expires_at });
+}));
+
+async function handleNairaEvent(event) {
+  const c = event.data || {};
+  const promiseId = Number(c.metadata?.promiseId);
+  if (!promiseId) return;
+  const entry = { promiseId, type: event.event === "collection.successful" ? "naira_transfer" : "naira_underpaid", reference: c.reference, at: c.paid_at };
+  roqquEvents.unshift(entry);
+  if (event.event !== "collection.successful") {
+    entry.note = `Underpaid: ₦${Number(c.received_ngn).toLocaleString("en-NG")} of ₦${Number(c.amount_ngn).toLocaleString("en-NG")} received, not credited. It is refundable to the sender.`;
+    return;
+  }
+  await creditWithRetry({ entry, run: () => confirmNaira({ entry, promiseId, reference: c.reference }) });
+}
+
+async function confirmNaira({ entry, promiseId, reference }) {
+  // The signed webhook is not enough on its own: the rail must report the collection as paid in full.
+  const c = await naira.getCollection(reference);
+  if (c.status !== "successful" || c.received_ngn < c.amount_ngn) {
+    entry.note = "Transfer not confirmed by the bank rail; not credited";
+    return;
+  }
+  const rate = await roqqu.ngnPerUsd();
+  const usd = c.received_ngn / rate;
+  // The on-chain reference keeps the naira amount and the rate used, so the record reads in naira.
+  const ref = `naira:${reference}:${c.received_ngn}NGN@${rate}`;
+  try {
+    const { hash } = await chain.asOperator("credit", [BigInt(promiseId), chain.toMicro(usd), ref]);
+    entry.creditTx = hash;
+    entry.note = undefined;
+  } catch (e) {
+    if (/RefReused/.test(e.message)) entry.note = "Already credited";
+    else throw e;
+  }
+}
+
+app.get("/api/banks", wrap(async (_req, res) => res.json(await naira.banks())));
+
+app.post("/api/resolve-account", wrap(async (req, res) => {
+  const { bankCode, accountNumber } = req.body || {};
+  const r = await naira.resolveAccount(String(bankCode || ""), String(accountNumber || ""));
+  res.json({ accountName: r.account_name });
+}));
+
+// ---- payouts: USDC on Base through Roqqu, or naira to a bank account ----
 
 app.post("/api/promises/:id/payout", wrap(async (req, res) => {
   const id = Number(req.params.id);
   const p = await chain.readPromise(id);
   if (!p || !(p.payable > 0)) throw new Error("Nothing is payable on this promise");
-  // Only what an applied resolution made payable can be sent; Roqqu queues the send and returns a refid.
-  const sent = await roqqu.sendPayout({ amount: p.payable, to: req.body?.to || p.apprentice });
-  const ref = `roqqu-send:${sent.refid}`;
+  // Only what an applied resolution made payable can be sent.
+  let ref;
+  let detail = {};
+  if (req.body?.method === "bank") {
+    const bankCode = String(req.body.bankCode || "");
+    const accountNumber = String(req.body.accountNumber || "");
+    const holder = await naira.resolveAccount(bankCode, accountNumber);
+    const rate = await roqqu.ngnPerUsd();
+    const amountNgn = Math.floor(p.payable * rate);
+    const t = await naira.transfer({ bank_code: bankCode, account_number: accountNumber, amount_ngn: amountNgn, reference: naira.reference(id, "W") });
+    ref = `bank:${t.reference}:${amountNgn}NGN@${rate}:${bankCode}:****${t.account_last4}`;
+    detail = { amountNgn, accountName: holder.account_name, rate };
+  } else {
+    // Roqqu queues the send and returns a refid.
+    const sent = await roqqu.sendPayout({ amount: p.payable, to: req.body?.to || p.apprentice });
+    ref = `roqqu-send:${sent.refid}`;
+  }
   const { hash } = await chain.asOperator("markPaid", [BigInt(id), chain.toMicro(p.payable), ref]);
-  res.json({ hash, ref, amount: p.payable });
+  res.json({ hash, ref, amount: p.payable, ...detail });
 }));
 
 // ---- demo signers for the Oga, apprentice and witnesses ----

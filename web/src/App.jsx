@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
-import { ScrollText, Coins, Scale, BookOpen, ChevronDown, ExternalLink, Info, Check, X } from "lucide-react";
+import { ScrollText, Coins, Scale, BookOpen, ChevronDown, ExternalLink, Info, Check, X, Copy, Landmark } from "lucide-react";
 import { Cloth, Seal, Mark, Stripe, CLOTH } from "./patterns.jsx";
-import { BackgroundArt, Figurehead } from "./art.jsx";
+import { BackgroundArt, Figurehead, Emblem } from "./art.jsx";
 import SignIn from "./signin.jsx";
 
 const SESSION_KEY = "fledge.session";
@@ -76,8 +76,15 @@ function useTween(value, ms = 600) {
   return shown;
 }
 
+/** Reads the naira amount and rate that a naira credit or payout carries in its on-chain reference. */
+function nairaOf(ref) {
+  const m = /:(\d+)NGN@([\d.]+)/.exec(ref || "");
+  return m ? { ngn: Number(m[1]), rate: Number(m[2]) } : null;
+}
+
 function refSource(ref) {
-  if (ref.startsWith("roqqu")) return ["Roqqu", "ok"];
+  if (ref.startsWith("naira:")) return ["Naira bank transfer", "ok"];
+  if (ref.startsWith("roqqu")) return ["Roqqu, paid in crypto", "ok"];
   if (ref.startsWith("SEED")) return ["Seeded history", "muted"];
   return ["Other", "muted"];
 }
@@ -95,7 +102,27 @@ export default function App() {
   const [toast, setToast] = useState(null);
 
   const ngn = config?.ngnPerUsd || null;
-  const naira = useCallback((usd) => (ngn ? `₦${Math.round(usd * ngn).toLocaleString("en-NG")}` : `$${usd.toLocaleString()}`), [ngn]);
+  const [unit, setUnitState] = useState(() => {
+    try {
+      return localStorage.getItem("fledge.unit") || "ngn";
+    } catch {
+      return "ngn";
+    }
+  });
+  const setUnit = (u) => {
+    setUnitState(u);
+    try {
+      localStorage.setItem("fledge.unit", u);
+    } catch {}
+  };
+  // Amounts are held in dollars on chain; this shows them in the unit the viewer picked.
+  const naira = useCallback(
+    (usd) =>
+      unit === "ngn" && ngn
+        ? `₦${Math.round(usd * ngn).toLocaleString("en-NG")}`
+        : `$${usd.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`,
+    [ngn, unit]
+  );
 
   const loadList = useCallback(async () => {
     const l = await api("/api/promises");
@@ -169,7 +196,7 @@ export default function App() {
   };
 
   if (!session) return <SignIn onDone={signIn} />;
-  if (!config) return <Splash text="Opening the ledger" />;
+  if (!config || (config.configured && list === null)) return <Splash text="Opening the ledger" />;
   if (!config.configured) return <Splash text="The contract address is not set" />;
   if (list && list.length === 0) return <Welcome onStart={startScenario} busy={busy} />;
 
@@ -195,6 +222,11 @@ export default function App() {
             <span>{promise ? `No. ${promise.id} · ${promise.trade}` : "Promises"}</span>
             <ChevronDown size={16} strokeWidth={1.5} />
           </button>
+          <div className="unit" role="radiogroup" aria-label="Show amounts in">
+            {[["ngn", "₦"], ["usd", "$"]].map(([u, l]) => (
+              <button key={u} role="radio" aria-checked={unit === u} className={unit === u ? "on" : ""} onClick={() => setUnit(u)}>{l}</button>
+            ))}
+          </div>
           <button className="who" onClick={() => setSheet("role")} title="Who you are acting as">
             <Figurehead role={role} size={32} />
             <span className="who-text"><small>Acting as</small>{myName}</span>
@@ -256,11 +288,14 @@ export default function App() {
   );
 }
 
+/** Loading: the fledgling lifts off its nest while a weave fills underneath. */
 function Splash({ text }) {
   return (
-    <div className="splash">
+    <div className="splash" role="status" aria-live="polite">
       <BackgroundArt />
-      <Cloth height={20} size={20} />
+      <div className="splash-mark"><Emblem size={112} /></div>
+      <div className="splash-weave" aria-hidden="true">{Array.from({ length: 8 }, (_, i) => <i key={i} style={{ animationDelay: `${i * 0.12}s` }} />)}</div>
+      <p className="splash-name">Fledge</p>
       <p>{text}</p>
     </div>
   );
@@ -409,7 +444,10 @@ function FundingTab({ p, naira, config, busy, run }) {
   const plan = p.events.some((e) => e.event === "ResolutionApplied") && p.status === "Active";
   const down = config.roqqu.outage;
 
+  const [transfer, setTransfer] = useState(null);
   const getLink = () => run(null, async () => setLink(await api(`/api/promises/${p.id}/link`, {})));
+  const getTransfer = () => run(null, async () => setTransfer(await api(`/api/promises/${p.id}/naira-link`, {})));
+  const copy = (t) => navigator.clipboard?.writeText(t).catch(() => {});
 
   return (
     <>
@@ -427,10 +465,26 @@ function FundingTab({ p, naira, config, busy, run }) {
       {p.status === "Active" && (
         <div className="action">
           <h3>Next instalment</h3>
-          {!link ? (
+          {transfer ? (
+            <div className="transfer">
+              <p className="muted">Send exactly this amount from any Nigerian bank app. It is converted to dollars at Roqqu's rate when it lands.</p>
+              <dl className="terms compact">
+                <div><dt>Amount</dt><dd><b>₦{transfer.amountNgn.toLocaleString("en-NG")}</b></dd></div>
+                <div><dt>Bank</dt><dd>{transfer.bankName}</dd></div>
+                <div><dt>Account</dt><dd className="copyrow"><span className="num">{transfer.accountNumber}</span><button className="icon" aria-label="Copy account number" onClick={() => copy(transfer.accountNumber)}><Copy size={16} strokeWidth={1.5} /></button></dd></div>
+                <div><dt>Name</dt><dd>{transfer.accountName}</dd></div>
+                <div><dt>Narration</dt><dd className="copyrow"><span className="mono">{transfer.reference}</span><button className="icon" aria-label="Copy reference" onClick={() => copy(transfer.reference)}><Copy size={16} strokeWidth={1.5} /></button></dd></div>
+              </dl>
+              <a className="btn primary" href={transfer.link} target="_blank" rel="noreferrer" onClick={() => setTimeout(() => setTransfer(null), 500)}>
+                Open the bank app (simulated) <ExternalLink size={16} strokeWidth={1.5} />
+              </a>
+              <small className="muted">At ₦{Number(transfer.rate).toLocaleString()} per $1. Credited once the bank rail confirms the transfer in full.</small>
+            </div>
+          ) : !link ? (
             <>
-              <button className="btn primary" disabled={busy || down} onClick={getLink}>Pay {naira(inst)} with Roqqu</button>
-              {down && <small className="muted">Roqqu is unavailable. Try again when it is back.</small>}
+              <button className="btn primary" disabled={busy || down} onClick={getTransfer}><Landmark size={18} strokeWidth={1.5} /> Pay {naira(inst)} by bank transfer</button>
+              <button className="btn" disabled={busy || down} onClick={getLink}>Pay in crypto through Roqqu</button>
+              {down && <small className="muted">Payments are unavailable right now. Try again when they are back.</small>}
             </>
           ) : (
             <div className="linkbox">
@@ -449,14 +503,17 @@ function FundingTab({ p, naira, config, busy, run }) {
           const [label, tone] = refSource(c.args.roqquRef);
           return (
             <li key={c.tx}>
-              <span className="grow"><b className="num">{naira(Number(c.args.amount) / 1e6)}</b><small className={`src ${tone}`}>{label}</small></span>
+              <span className="grow">
+                <b className="num">{naira(Number(c.args.amount) / 1e6)}</b>
+                <small className={`src ${tone}`}>{label}{nairaOf(c.args.roqquRef) && ` · ₦${nairaOf(c.args.roqquRef).ngn.toLocaleString("en-NG")} at ₦${nairaOf(c.args.roqquRef).rate.toLocaleString()}/$`}</small>
+              </span>
               <a className="mono" href={`${config.explorer}/tx/${c.tx}`} target="_blank" rel="noreferrer">{short(c.tx)}</a>
             </li>
           );
         })}
         {p.roqquEvents.filter((e) => !e.creditTx || e.note).map((e, i) => (
           <li key={`r${i}`} className="off">
-            <span className="grow"><b>{e.type.replace("payment_link_", "Roqqu ").replace(/_/g, " ")}</b><small>{e.note || "Not credited"}</small></span>
+            <span className="grow"><b>{e.type.startsWith("naira") ? (e.type === "naira_transfer" ? "Naira transfer" : "Naira transfer, underpaid") : e.type.replace("payment_link_", "Roqqu ").replace(/_/g, " ")}</b><small>{e.note || "Not credited"}</small></span>
             <span className="mono">{e.reference}</span>
           </li>
         ))}
@@ -502,12 +559,7 @@ function SettleTab({ p, naira, config, role, busy, act, run, ngn }) {
         <div className="stat"><span>Still owed</span><b>{naira(p.outstanding)}</b></div>
       </div>
 
-      {p.payable > 0 && (
-        <div className="payout">
-          <span className="grow"><b>{naira(p.payable)}</b> is approved for the apprentice</span>
-          <button className="btn primary" disabled={busy} onClick={() => run("Paid out through Roqqu", () => api(`/api/promises/${p.id}/payout`, {}))}>Send through Roqqu</button>
-        </div>
-      )}
+      {p.payable > 0 && <Payout p={p} naira={naira} ngn={ngn} busy={busy} run={run} />}
 
       <h3>Seals</h3>
       <div className="seals">
@@ -604,5 +656,66 @@ function RecordTab({ p, naira, config }) {
         ))}
       </ol>
     </>
+  );
+}
+
+/** Pays out what a resolution approved: naira to a bank account, or USDC on Base through Roqqu. */
+function Payout({ p, naira, ngn, busy, run }) {
+  const [method, setMethod] = useState("bank");
+  const [banks, setBanks] = useState([]);
+  const [bankCode, setBankCode] = useState("");
+  const [accountNumber, setAccountNumber] = useState("");
+  const [holder, setHolder] = useState(null);
+
+  useEffect(() => {
+    api("/api/banks").then(setBanks).catch(() => {});
+  }, []);
+  useEffect(() => {
+    setHolder(null);
+    if (!bankCode || !/^\d{10}$/.test(accountNumber)) return;
+    let live = true;
+    api("/api/resolve-account", { bankCode, accountNumber })
+      .then((r) => live && setHolder({ name: r.accountName }))
+      .catch((e) => live && setHolder({ error: e.message }));
+    return () => {
+      live = false;
+    };
+  }, [bankCode, accountNumber]);
+
+  const ngnAmount = ngn ? Math.floor(p.payable * ngn) : null;
+  const send = () =>
+    method === "bank"
+      ? run(`₦${ngnAmount?.toLocaleString("en-NG")} sent to ${holder?.name}`, () => api(`/api/promises/${p.id}/payout`, { method: "bank", bankCode, accountNumber }))
+      : run("Paid out in USDC through Roqqu", () => api(`/api/promises/${p.id}/payout`, { method: "usdc" }));
+
+  return (
+    <div className="payout">
+      <p className="payout-head"><b>{naira(p.payable)}</b> is approved for the apprentice</p>
+      <div className="seg" role="radiogroup" aria-label="Pay out as">
+        <button role="radio" aria-checked={method === "bank"} className={method === "bank" ? "on" : ""} onClick={() => setMethod("bank")}>Naira to a bank account</button>
+        <button role="radio" aria-checked={method === "usdc"} className={method === "usdc" ? "on" : ""} onClick={() => setMethod("usdc")}>USDC on Base</button>
+      </div>
+      {method === "bank" ? (
+        <div className="fields">
+          <label>Bank
+            <select value={bankCode} onChange={(e) => setBankCode(e.target.value)}>
+              <option value="">Choose a bank</option>
+              {banks.map((b) => <option key={b.code} value={b.code}>{b.name}</option>)}
+            </select>
+          </label>
+          <label>Account number
+            <input inputMode="numeric" maxLength={10} value={accountNumber} onChange={(e) => setAccountNumber(e.target.value.replace(/\D/g, ""))} placeholder="10 digits" />
+          </label>
+          {holder?.name && <p className="holder full"><Check size={16} strokeWidth={1.5} /> {holder.name}</p>}
+          {holder?.error && <p className="holder bad full">{holder.error}</p>}
+        </div>
+      ) : (
+        <p className="muted">Sent as USDC on Base to the apprentice's wallet through Roqqu.</p>
+      )}
+      <button className="btn primary" disabled={busy || (method === "bank" && !holder?.name)} onClick={send}>
+        {method === "bank" ? `Send ₦${ngnAmount?.toLocaleString("en-NG") ?? "…"}${holder?.name ? ` to ${holder.name}` : ""}` : `Send ${p.payable.toLocaleString()} USDC`}
+      </button>
+      {method === "bank" && <small className="muted">Converted at Roqqu's rate, ₦{ngn?.toLocaleString()} per $1. Bank rail simulated; no real money moves.</small>}
+    </div>
   );
 }

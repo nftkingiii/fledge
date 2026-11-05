@@ -454,3 +454,49 @@ input {
 
 /* Line art stays line art: only the dot ring is filled. */
 .bg-art path { fill: none; }
+
+/* ---- unit switch ---- */
+.topbar { grid-template-columns: 1fr auto auto; grid-template-areas: "brand unit who" "picker picker picker"; }
+.unit { grid-area: unit; display: flex; padding: 2px; border-radius: 999px; background: var(--card); border: 1px solid var(--line); }
+.unit button { width: 36px; height: 32px; border-radius: 999px; font-weight: 500; color: var(--muted); transition: background-color 0.15s var(--ease), color 0.15s; }
+.unit button.on { background: var(--ink); color: var(--bg); }
+@media (min-width: 900px) {
+  .topbar { grid-template-columns: minmax(0, 360px) 1fr auto auto; grid-template-areas: "picker . unit who"; }
+}
+
+/* ---- naira transfer details ---- */
+.transfer { display: grid; gap: 12px; width: 100%; }
+.transfer p { margin: 0; }
+.copyrow { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.copyrow .icon { width: 32px; height: 32px; }
+.action .btn + .btn { margin-top: 0; }
+
+/* ---- payout destination ---- */
+.payout { display: grid; gap: 12px; padding: 16px; border-radius: 12px; background: var(--card); border: 1px solid color-mix(in srgb, var(--pos) 40%, var(--line)); color: var(--ink); }
+.payout-head { margin: 0; color: var(--pos); }
+.seg { display: grid; grid-template-columns: 1fr 1fr; gap: 4px; padding: 4px; border-radius: 10px; background: var(--raised); }
+.seg button { height: 36px; border-radius: 8px; font-size: 14px; color: var(--ink-2); transition: background-color 0.15s var(--ease); }
+.seg button.on { background: var(--card); color: var(--ink); box-shadow: 0 1px 2px rgba(0, 0, 0, 0.08); }
+.payout select { font: inherit; color: var(--ink); background: var(--bg); border: 1px solid var(--line); border-radius: 8px; height: 44px; padding: 0 12px; width: 100%; }
+.holder { margin: 0; display: flex; align-items: center; gap: 8px; font-weight: 500; color: var(--pos); font-size: 14px; }
+.holder.bad { color: var(--neg); font-weight: 400; }
+.payout .btn { width: 100%; }
+
+/* ---- loading: the fledgling lifts off the nest ---- */
+.splash { justify-items: center; }
+.splash-mark { animation: lift 1.6s var(--ease) infinite alternate; }
+.splash-mark .emblem { filter: drop-shadow(0 12px 18px rgba(0, 0, 0, 0.18)); }
+.splash-weave { display: flex; gap: 4px; }
+.splash-weave i { width: 14px; height: 20px; border-radius: 3px; background: var(--raised); animation: weave 1.6s var(--ease) infinite; }
+.splash-name { margin: 0; font-family: "Kaushan Script", cursive; font-size: 32px; color: var(--ink); }
+.splash p:last-child { margin: 0; font-size: 14px; }
+@keyframes lift { from { transform: translateY(6px); } to { transform: translateY(-8px); } }
+@keyframes weave {
+  0%, 20% { background: var(--raised); }
+  45%, 80% { background: repeating-linear-gradient(135deg, var(--cloth-gold) 0 4px, color-mix(in srgb, var(--cloth-gold) 86%, #000) 4px 6px); }
+  100% { background: var(--raised); }
+}
+@media (max-width: 400px) {
+  .who-text small { display: none; }
+  .brand span { display: none; }
+}
