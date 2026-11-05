@@ -42,9 +42,25 @@ const retryQueue = [];
 app.use("/webhooks", express.json({ limit: "64kb" }));
 app.use("/api", express.json({ limit: "16kb" }));
 
+// Plain-language reasons for the contract's refusals.
+const REFUSALS = {
+  NotOperator: "Only the Nkwa operator can do that.",
+  NotParty: "This person is not allowed to do that on this promise.",
+  NotWitness: "Only a named witness can do that.",
+  BadState: "The promise is not in a state that allows this.",
+  BadInput: "Those terms are not valid. Anything left unpaid needs a later due date.",
+  RefReused: "That Roqqu reference was already recorded.",
+  TooEarly: "Settlement can only be raised on or after the settlement date. Before it, only an early exit or a reduction.",
+  ExceedsHeld: "That is more than the money actually held for this promise.",
+  ExceedsOutstanding: "That is more than is still owed.",
+  AlreadyApproved: "This witness has already approved this resolution.",
+  NoOpenResolution: "There is no open resolution to act on.",
+};
+
 const wrap = (fn) => (req, res) =>
   fn(req, res).catch((e) => {
-    const msg = e.shortMessage || e.message || String(e);
+    const errorName = e.walk?.((c) => c?.data?.errorName)?.data?.errorName;
+    const msg = (errorName && `Refused by the contract: ${REFUSALS[errorName] || errorName}`) || e.shortMessage || e.message || String(e);
     console.error(req.method, req.path, msg);
     res.status(400).json({ error: msg });
   });

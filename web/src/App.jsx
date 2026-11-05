@@ -248,7 +248,9 @@ function FundingTab({ p, naira, config, busy, run }) {
         <i className="funded" style={{ width: pct(p.funded) }} />
       </div>
       <div className="legend"><span>■ Funded</span><span>▯ Due by now</span></div>
-      {p.arrears > 0 ? (
+      {p.events.some((e) => e.event === "ResolutionApplied") && p.status === "Active" ? (
+        <p className="callout warn">A settlement plan is agreed: {naira(p.outstanding)} is still owed by {date(p.end)}.</p>
+      ) : p.arrears > 0 ? (
         <p className="callout bad">The Oga is {naira(p.arrears)} behind. The witnesses can see this now, years before settlement day.</p>
       ) : p.status === "Active" ? (
         <p className="callout ok">Funding is on schedule.</p>
