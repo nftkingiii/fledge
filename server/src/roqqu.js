@@ -31,12 +31,17 @@ async function call(method, path, { body, auth = true } = {}) {
   return json.data;
 }
 
+// Roqqu updates rates every minute; a short cache keeps pages fast.
+let rateCache = { value: null, at: 0 };
+
 /** Naira per US dollar, from Roqqu's public rates feed. */
 export async function ngnPerUsd() {
+  if (rateCache.value && Date.now() - rateCache.at < 60_000) return rateCache.value;
   const rates = await call("GET", "/rates", { auth: false });
   const ngn = rates.find((r) => r.symbol === "ngn");
   if (!ngn) throw new Error("Roqqu rates have no NGN entry");
-  return Number(ngn.rate);
+  rateCache = { value: Number(ngn.rate), at: Date.now() };
+  return rateCache.value;
 }
 
 export function balances() {

@@ -74,8 +74,11 @@ export default function App() {
     return () => clearInterval(t);
   }, []);
   useEffect(() => {
-    if (config?.configured) loadList().catch(() => {});
-  }, [config, loadList]);
+    if (!config?.configured) return;
+    loadList().catch(() => {});
+    const t = setInterval(() => loadList().catch(() => {}), 10000);
+    return () => clearInterval(t);
+  }, [config?.configured, loadList]);
   useEffect(() => {
     loadPromise().catch((e) => setToast({ err: true, text: e.message }));
     const t = setInterval(() => loadPromise().catch(() => {}), 8000);
@@ -164,7 +167,7 @@ export default function App() {
 
           <main className="card">
             {!promise ? (
-              <p className="empty">Create a demo promise to begin.</p>
+              <p className="empty">{selected ? "Loading promise…" : "Create a demo promise to begin."}</p>
             ) : (
               <>
                 <nav className="tabs" role="tablist">

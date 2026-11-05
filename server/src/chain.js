@@ -54,7 +54,8 @@ export const STATUS = ["None", "Proposed", "Active", "Closed"];
 
 const address = process.env.NKWA_ADDRESS;
 const transport = http(process.env.RPC_URL || baseSepolia.rpcUrls.default.http[0]);
-export const publicClient = createPublicClient({ chain: baseSepolia, transport });
+// Reads issued together go out as one Multicall3 call, which keeps the public RPC's rate limit at bay.
+export const publicClient = createPublicClient({ chain: baseSepolia, transport, batch: { multicall: true } });
 
 export const operator = process.env.OPERATOR_KEY ? privateKeyToAccount(process.env.OPERATOR_KEY) : null;
 
