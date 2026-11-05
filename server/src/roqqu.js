@@ -63,8 +63,9 @@ export function depositByHash(hash) {
   return call("GET", `/transaction/deposit/${encodeURIComponent(hash)}`);
 }
 
-export function sendUsdt({ amount, to }) {
-  return call("POST", "/wallets/send", { body: { amount: String(amount), network: "bep20", token: "usdt", to } });
+/** Payouts go out as USDC on Base, where the promise record lives. */
+export function sendPayout({ amount, to }) {
+  return call("POST", "/wallets/send", { body: { amount: String(amount), network: "base", token: "usdc", to } });
 }
 
 export function sendRecord(refid) {

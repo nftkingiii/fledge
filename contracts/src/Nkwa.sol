@@ -5,7 +5,7 @@ pragma solidity ^0.8.24;
 /// @notice Records an Igba-boi settlement promise between an Oga and his apprentice,
 /// tracks gradual funding received through Roqqu, and only lets value leave the
 /// promise through a resolution approved by the apprentice and a witness quorum.
-/// @dev Amounts are USD with 6 decimals, matching USDT. Funds are held in the
+/// @dev Amounts are USD with 6 decimals, matching USDT and USDC. Funds are held in the
 /// operator's Roqqu merchant balance; this contract is the rulebook and the record.
 /// The operator can credit what Roqqu confirmed and mark payouts it executed, but it
 /// can only pay out what an applied resolution made payable.

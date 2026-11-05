@@ -1,6 +1,6 @@
 import { createPublicClient, createWalletClient, http, parseAbi, parseEventLogs } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
-import { bscTestnet } from "viem/chains";
+import { baseSepolia } from "viem/chains";
 
 export const abi = parseAbi([
   "struct Promise { address oga; address apprentice; uint64 start; uint64 end; uint32 instalments; uint8 quorum; uint8 status; uint128 promised; uint128 funded; uint128 paidOut; uint128 inKind; uint128 refunded; uint128 payable_; uint128 refundable; string trade; }",
@@ -53,8 +53,8 @@ export const KINDS = ["Settle", "InKind", "Extend", "EarlyExit", "Reduce"];
 export const STATUS = ["None", "Proposed", "Active", "Closed"];
 
 const address = process.env.NKWA_ADDRESS;
-const transport = http(process.env.RPC_URL || bscTestnet.rpcUrls.default.http[0]);
-export const publicClient = createPublicClient({ chain: bscTestnet, transport });
+const transport = http(process.env.RPC_URL || baseSepolia.rpcUrls.default.http[0]);
+export const publicClient = createPublicClient({ chain: baseSepolia, transport });
 
 export const operator = process.env.OPERATOR_KEY ? privateKeyToAccount(process.env.OPERATOR_KEY) : null;
 
@@ -76,7 +76,7 @@ export function contractAddress() {
 }
 
 async function write(account, functionName, args) {
-  const wallet = createWalletClient({ account, chain: bscTestnet, transport });
+  const wallet = createWalletClient({ account, chain: baseSepolia, transport });
   const { request } = await publicClient.simulateContract({ account, address, abi, functionName, args });
   const hash = await wallet.writeContract(request);
   const receipt = await publicClient.waitForTransactionReceipt({ hash, timeout: 60_000 });

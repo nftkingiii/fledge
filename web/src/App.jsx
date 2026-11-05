@@ -202,7 +202,7 @@ function PromiseTab({ p, naira, config }) {
     <>
       <h2>{p.trade}</h2>
       <div className="grid section">
-        <div className="stat"><span>Promised</span><b>{naira(p.promised)}</b><small>${p.promised.toLocaleString()} in USDT</small></div>
+        <div className="stat"><span>Promised</span><b>{naira(p.promised)}</b><small>${p.promised.toLocaleString()} in dollar stablecoin</small></div>
         <div className="stat"><span>Term</span><b>{date(p.start)}</b><small>to {date(p.end)}</small></div>
         <div className="stat"><span>Schedule</span><b>{p.instalments}</b><small>instalments of {naira(p.original / p.instalments)}</small></div>
         <div className="stat"><span>Status</span><b>{p.status}</b><small>{p.quorum} of {p.witnesses.length} witnesses decide</small></div>

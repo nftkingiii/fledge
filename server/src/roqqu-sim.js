@@ -151,12 +151,12 @@ export function createRoqquSim({ key, publicUrl, webhookUrl }) {
   api.post("/wallets/send", (req, res) => {
     const amount = Number(req.body.amount);
     if (!(amount > 0)) return fail(res, 400, "amount must be greater than 0");
-    if (req.body.token !== "usdt") return fail(res, 400, "invalid token symbol parsed");
+    if (req.body.token !== "usdc" || req.body.network !== "base") return fail(res, 400, "network not available for token");
     if (!/^0x[0-9a-fA-F]{40}$/.test(req.body.to || "")) return fail(res, 400, "invalid network parsed for address");
-    if (amount > usdtBalance + 1e-9) return fail(res, 400, "insufficient USDT balance");
+    if (amount > usdtBalance + 1e-9) return fail(res, 400, "insufficient USDC balance");
     usdtBalance -= amount;
     const refid = id();
-    sends.set(refid, { refid, status: 1, value: amount, _to: req.body.to, token: "usdt", network: "bep20", tx_hash: txHash(), created_at: new Date().toISOString() });
+    sends.set(refid, { refid, status: 1, value: amount, _to: req.body.to, token: "usdc", network: "base", tx_hash: txHash(), created_at: new Date().toISOString() });
     res.json({ status: "success", message: "send operation successful", data: { refid } });
   });
 
@@ -167,6 +167,7 @@ export function createRoqquSim({ key, publicUrl, webhookUrl }) {
   });
 
   router.use("/v1", api);
+  // The simulator keeps one dollar balance: USDT in, USDC out, as Roqqu would after a swap.
   // Funding that happened before this server started (seeded history) sits in the balance too.
   return { router, state, seedBalance: (usd) => (usdtBalance += usd) };
 }

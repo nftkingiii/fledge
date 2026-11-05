@@ -26,7 +26,7 @@ for (const e of got) {
   console.log(e.event_type, "| promise", m.metadata.promiseId, "| value", m.value, "USDT | deposit status", dep.status, "| address match", dep.address === m.address);
 }
 console.log("forged body decrypts to:", roqqu.decryptWebhook("deadbeef", "00".repeat(16)));
-const sent = await roqqu.sendUsdt({ amount: 100, to: "0x" + "1".repeat(40) });
+const sent = await roqqu.sendPayout({ amount: 100, to: "0x" + "1".repeat(40) });
 console.log("send refid ok:", Boolean(sent.refid), "| record:", (await roqqu.sendRecord(sent.refid)).value);
-try { await roqqu.sendUsdt({ amount: 1e6, to: "0x" + "1".repeat(40) }); } catch (e) { console.log("overdraw ->", e.message); }
+try { await roqqu.sendPayout({ amount: 1e6, to: "0x" + "1".repeat(40) }); } catch (e) { console.log("overdraw ->", e.message); }
 srv.close();

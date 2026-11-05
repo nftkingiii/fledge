@@ -71,8 +71,8 @@ app.get("/api/config", wrap(async (_req, res) => {
     ngnPerUsd = await roqqu.ngnPerUsd();
   } catch {}
   res.json({
-    chainId: 97,
-    explorer: "https://testnet.bscscan.com",
+    chainId: 84532,
+    explorer: "https://sepolia.basescan.org",
     contract: chain.contractAddress() || null,
     operator: chain.operator?.address || null,
     configured: chain.configured(),
@@ -198,7 +198,7 @@ app.post("/api/promises/:id/payout", wrap(async (req, res) => {
   const p = await chain.readPromise(id);
   if (!p || !(p.payable > 0)) throw new Error("Nothing is payable on this promise");
   // Only what an applied resolution made payable can be sent; Roqqu queues the send and returns a refid.
-  const sent = await roqqu.sendUsdt({ amount: p.payable, to: req.body?.to || p.apprentice });
+  const sent = await roqqu.sendPayout({ amount: p.payable, to: req.body?.to || p.apprentice });
   const ref = `roqqu-send:${sent.refid}`;
   const { hash } = await chain.asOperator("markPaid", [BigInt(id), chain.toMicro(p.payable), ref]);
   res.json({ hash, ref, amount: p.payable });
