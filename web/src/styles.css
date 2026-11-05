@@ -30,7 +30,7 @@
   color-scheme: light;
 }
 
-@media (prefers-color-scheme: dark) {
+@media not all {
   :root {
     --bg: #161513;
     --card: #1c1a18;
@@ -357,7 +357,7 @@ input {
 .bg-art svg { width: 100%; height: 100%; display: block; }
 .bg-ink-a { stroke: var(--cloth-red); fill: var(--cloth-red); opacity: 0.16; }
 .bg-ink-b { stroke: var(--cloth-slate); opacity: 0.18; }
-@media (prefers-color-scheme: dark) {
+@media not all {
   .bg-ink-a { stroke: #f0b45a; fill: #f0b45a; opacity: 0.26; }
   .bg-ink-b { stroke: #8fd3c1; opacity: 0.24; }
 }
