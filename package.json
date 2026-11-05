@@ -1,0 +1,9 @@
+{
+  "name": "nkwa",
+  "private": true,
+  "scripts": {
+    "build": "npm --prefix web ci && npm --prefix web run build && npm --prefix server ci --omit=dev",
+    "start": "node server/src/index.js"
+  },
+  "engines": { "node": ">=22" }
+}
