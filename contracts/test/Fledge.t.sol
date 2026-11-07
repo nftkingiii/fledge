@@ -276,4 +276,176 @@ contract FledgeTest is Test {
         vm.expectRevert(Fledge.NotParty.selector);
         fledge.proposeResolution(id, Fledge.Kind.Reduce, 0, 0, 0, 1, 0, "x");
     }
+
+    // ---- disputes ----
+
+    bytes32 constant EVIDENCE = keccak256("police report + shop ledger");
+    bytes32 constant ANSWER = keccak256("apprentice statement");
+
+    function _dispute(uint256 id, uint128 claim) internal {
+        vm.prank(oga);
+        fledge.raiseDispute(id, Fledge.Grounds.Theft, claim, EVIDENCE);
+    }
+
+    function test_ogaOrWitnessCanRaise_apprenticeCannot() public {
+        uint256 id = _active();
+        vm.prank(boy);
+        vm.expectRevert(Fledge.NotParty.selector);
+        fledge.raiseDispute(id, Fledge.Grounds.Theft, 100 * USD, EVIDENCE);
+        vm.prank(oga);
+        vm.expectRevert(Fledge.BadInput.selector);
+        fledge.raiseDispute(id, Fledge.Grounds.Theft, 100 * USD, bytes32(0));
+        vm.prank(w2);
+        fledge.raiseDispute(id, Fledge.Grounds.Misconduct, 0, EVIDENCE);
+        assertTrue(fledge.getDispute(id).open);
+    }
+
+    function test_disputeFreezesSettlementAndPayout() public {
+        uint256 id = _active();
+        _credit(id, 1_200 * USD, "a");
+        vm.warp(end + 1);
+        vm.prank(w1);
+        fledge.proposeResolution(id, Fledge.Kind.Settle, 1_200 * USD, 0, 0, 0, uint64(block.timestamp + 365 days), "settle");
+        _dispute(id, 500 * USD);
+        // The apprentice cannot push the settlement through while the dispute is open.
+        vm.prank(boy);
+        vm.expectRevert(Fledge.Frozen.selector);
+        fledge.consentResolution(id);
+        vm.prank(w2);
+        vm.expectRevert(Fledge.Frozen.selector);
+        fledge.approveResolution(id);
+        vm.prank(boy);
+        vm.expectRevert(Fledge.Frozen.selector);
+        fledge.proposeResolution(id, Fledge.Kind.Settle, 1_200 * USD, 0, 0, 0, uint64(block.timestamp + 365 days), "mine");
+    }
+
+    function test_witnessesWaitForTheAnswer() public {
+        uint256 id = _active();
+        _dispute(id, 100 * USD);
+        vm.prank(w1);
+        vm.expectRevert(Fledge.AnswerPending.selector);
+        fledge.voteDispute(id, Fledge.Ruling.Restitution);
+        vm.prank(boy);
+        fledge.answerDispute(id, ANSWER);
+        vm.prank(w1);
+        fledge.voteDispute(id, Fledge.Ruling.Restitution);
+    }
+
+    function test_silenceDoesNotBlockTheWitnesses() public {
+        uint256 id = _active();
+        _dispute(id, 100 * USD);
+        vm.warp(block.timestamp + 14 days);
+        vm.prank(w1);
+        fledge.voteDispute(id, Fledge.Ruling.Restitution);
+    }
+
+    function test_restitutionReturnsTheLossWithoutTheApprenticesConsent() public {
+        uint256 id = _active();
+        _credit(id, 1_200 * USD, "a");
+        _dispute(id, 300 * USD);
+        vm.prank(boy);
+        fledge.answerDispute(id, ANSWER);
+        vm.prank(w1);
+        fledge.voteDispute(id, Fledge.Ruling.Restitution);
+        vm.prank(w3);
+        fledge.voteDispute(id, Fledge.Ruling.Restitution);
+        Fledge.Promise memory p = fledge.getPromise(id);
+        assertFalse(fledge.getDispute(id).open);
+        assertEq(uint8(fledge.getDispute(id).ruling), uint8(Fledge.Ruling.Restitution));
+        assertEq(p.refundable, 300 * USD);
+        assertEq(p.promised, PROMISE - 300 * USD);
+        assertEq(fledge.held(id), 900 * USD);
+        assertEq(fledge.disputesUpheldAgainst(boy), 1);
+        vm.prank(operator);
+        fledge.markRefunded(id, 300 * USD, "send-oga-loss");
+    }
+
+    function test_restitutionNeverTakesMoreThanClaimedOrHeld() public {
+        uint256 id = _active();
+        _credit(id, 200 * USD, "a");
+        _dispute(id, 500 * USD);
+        vm.prank(boy);
+        fledge.answerDispute(id, ANSWER);
+        vm.prank(w1);
+        fledge.voteDispute(id, Fledge.Ruling.Restitution);
+        vm.prank(w2);
+        fledge.voteDispute(id, Fledge.Ruling.Restitution);
+        assertEq(fledge.getPromise(id).refundable, 200 * USD);
+        assertEq(fledge.held(id), 0);
+    }
+
+    function test_forfeitNeedsEveryWitness() public {
+        uint256 id = _active();
+        _credit(id, 1_000 * USD, "a");
+        _dispute(id, 400 * USD);
+        vm.prank(boy);
+        fledge.answerDispute(id, ANSWER);
+        vm.prank(w1);
+        fledge.voteDispute(id, Fledge.Ruling.Forfeit);
+        vm.prank(w2);
+        fledge.voteDispute(id, Fledge.Ruling.Forfeit);
+        assertTrue(fledge.getDispute(id).open);
+        vm.prank(w3);
+        fledge.voteDispute(id, Fledge.Ruling.Forfeit);
+        Fledge.Promise memory p = fledge.getPromise(id);
+        assertEq(uint8(p.status), uint8(Fledge.Status.Closed));
+        assertEq(p.refundable, 1_000 * USD);
+    }
+
+    function test_splitVoteFallsBackToRestitution() public {
+        uint256 id = _active();
+        _credit(id, 1_000 * USD, "a");
+        _dispute(id, 400 * USD);
+        vm.prank(boy);
+        fledge.answerDispute(id, ANSWER);
+        vm.prank(w1);
+        fledge.voteDispute(id, Fledge.Ruling.Forfeit);
+        vm.prank(w2);
+        fledge.voteDispute(id, Fledge.Ruling.Dismiss);
+        vm.prank(w3);
+        fledge.voteDispute(id, Fledge.Ruling.Restitution);
+        assertEq(uint8(fledge.getDispute(id).ruling), uint8(Fledge.Ruling.Restitution));
+        assertEq(fledge.getPromise(id).refundable, 400 * USD);
+    }
+
+    function test_dismissedDisputeCountsAgainstTheOga() public {
+        uint256 id = _active();
+        _credit(id, 1_000 * USD, "a");
+        _dispute(id, 400 * USD);
+        vm.prank(boy);
+        fledge.answerDispute(id, ANSWER);
+        vm.prank(w1);
+        fledge.voteDispute(id, Fledge.Ruling.Dismiss);
+        vm.prank(w2);
+        fledge.voteDispute(id, Fledge.Ruling.Dismiss);
+        assertFalse(fledge.getDispute(id).open);
+        assertEq(fledge.disputesDismissed(oga), 1);
+        assertEq(fledge.getPromise(id).refundable, 0);
+        assertEq(fledge.held(id), 1_000 * USD);
+    }
+
+    function test_undecidedDisputeLapses() public {
+        uint256 id = _active();
+        _dispute(id, 100 * USD);
+        vm.expectRevert(Fledge.TooEarly.selector);
+        fledge.lapseDispute(id);
+        vm.warp(block.timestamp + 30 days + 1);
+        fledge.lapseDispute(id);
+        assertFalse(fledge.getDispute(id).open);
+    }
+
+    function test_strangerCannotVoteAndWitnessVotesOnce() public {
+        uint256 id = _active();
+        _dispute(id, 100 * USD);
+        vm.prank(boy);
+        fledge.answerDispute(id, ANSWER);
+        vm.prank(makeAddr("stranger"));
+        vm.expectRevert(Fledge.NotWitness.selector);
+        fledge.voteDispute(id, Fledge.Ruling.Restitution);
+        vm.prank(w1);
+        fledge.voteDispute(id, Fledge.Ruling.Dismiss);
+        vm.prank(w1);
+        vm.expectRevert(Fledge.AlreadyApproved.selector);
+        fledge.voteDispute(id, Fledge.Ruling.Restitution);
+    }
 }

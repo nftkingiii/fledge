@@ -2,6 +2,7 @@ import express from "express";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import crypto from "node:crypto";
+import { keccak256, toBytes } from "viem";
 import * as roqqu from "./roqqu.js";
 import * as chain from "./chain.js";
 import { createRoqquSim } from "./roqqu-sim.js";
@@ -75,6 +76,9 @@ const REFUSALS = {
   ExceedsOutstanding: "That is more than is still owed.",
   AlreadyApproved: "This witness has already approved this resolution.",
   NoOpenResolution: "There is no open resolution to act on.",
+  Frozen: "A dispute is open. Nothing can be settled or paid until the witnesses decide it.",
+  NoOpenDispute: "There is no open dispute.",
+  AnswerPending: "The apprentice still has time to answer. Witnesses can rule once he answers or the 14 days pass.",
 };
 
 const wrap = (fn) => (req, res) =>
@@ -300,12 +304,13 @@ app.post("/api/promises/:id/payout", wrap(async (req, res) => {
 
 // ---- demo signers for the Oga, apprentice and witnesses ----
 
+const WITNESS = ["proposeResolution", "approveResolution", "attestService", "raiseDispute", "voteDispute"];
 const ROLE_ACTIONS = {
-  oga: ["proposeResolution"],
-  apprentice: ["proposeResolution", "consentResolution"],
-  union: ["proposeResolution", "approveResolution", "attestService"],
-  uncle: ["proposeResolution", "approveResolution", "attestService"],
-  pastor: ["proposeResolution", "approveResolution", "attestService"],
+  oga: ["proposeResolution", "raiseDispute"],
+  apprentice: ["proposeResolution", "consentResolution", "answerDispute"],
+  union: WITNESS,
+  uncle: WITNESS,
+  pastor: WITNESS,
 };
 
 app.post("/api/promises/:id/act", wrap(async (req, res) => {
@@ -329,6 +334,21 @@ app.post("/api/promises/:id/act", wrap(async (req, res) => {
     ];
   } else if (action === "attestService") {
     callArgs = [id, Number(args.year || 1)];
+  } else if (action === "raiseDispute") {
+    // Evidence stays off chain; only its fingerprint goes on chain, so it can't be swapped later.
+    const grounds = chain.GROUNDS.indexOf(args.grounds);
+    if (grounds < 0) throw new Error("Unknown grounds");
+    const evidence = String(args.evidence || "").trim();
+    if (!evidence) throw new Error("Describe the evidence");
+    callArgs = [id, grounds, chain.toMicro(args.claim || 0), keccak256(toBytes(evidence.slice(0, 500)))];
+  } else if (action === "answerDispute") {
+    const answer = String(args.answer || "").trim();
+    if (!answer) throw new Error("Write the answer");
+    callArgs = [id, keccak256(toBytes(answer.slice(0, 500)))];
+  } else if (action === "voteDispute") {
+    const ruling = chain.RULINGS.indexOf(args.ruling);
+    if (ruling < 1) throw new Error("Unknown ruling");
+    callArgs = [id, ruling];
   }
   const { hash } = await chain.asRole(role, action, callArgs);
   res.json({ hash });

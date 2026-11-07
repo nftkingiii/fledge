@@ -500,3 +500,11 @@ input {
   .who-text small { display: none; }
   .brand span { display: none; }
 }
+
+/* ---- disputes ---- */
+.dispute { display: grid; gap: 12px; padding: 16px; border-radius: 12px; background: var(--card); border: 1px solid color-mix(in srgb, var(--neg) 45%, var(--line)); }
+.dispute-head { display: grid; gap: 2px; }
+.dispute-head b { font-weight: 500; font-size: 16px; color: var(--neg); }
+.dispute-head small { color: var(--muted); }
+.dispute .people li { min-height: 44px; }
+.dispute .terms dd small { display: block; color: var(--muted); }

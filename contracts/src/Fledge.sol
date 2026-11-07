@@ -66,8 +66,48 @@ contract Fledge {
         uint128 deliveredClosed; // cash + in kind delivered on closed deals
     }
 
+    // A dispute the Oga or a witness raises against the apprentice: theft, misconduct or leaving the shop.
+    // It freezes the promise, gives the apprentice time to answer, and is decided by the witnesses alone.
+    enum Grounds {
+        Theft,
+        Misconduct,
+        Abandonment
+    }
+    enum Ruling {
+        None,
+        Dismiss, // nothing proven: the freeze lifts, and it counts against whoever raised it
+        Restitution, // the proven loss comes out of the settlement and goes back to the Oga
+        Forfeit // the promise ends and what is held goes back to the Oga; needs every witness
+    }
+
+    struct Dispute {
+        bool open;
+        Grounds grounds;
+        address raisedBy;
+        uint128 claim; // the loss claimed, the most restitution can ever take
+        bytes32 evidence; // fingerprint of evidence kept off chain (police report, photos, union statement)
+        bytes32 answer; // fingerprint of the apprentice's answer
+        uint64 raisedAt;
+        uint64 answerBy;
+        uint64 decideBy;
+        uint8 dismissVotes;
+        uint8 restitutionVotes;
+        uint8 forfeitVotes;
+        uint32 round;
+        Ruling ruling;
+    }
+
+    uint64 public constant ANSWER_WINDOW = 14 days;
+    uint64 public constant DECIDE_WINDOW = 30 days;
+
     address public immutable operator;
     uint256 public count;
+
+    mapping(uint256 => Dispute) internal disputes;
+    mapping(uint256 => mapping(uint32 => mapping(address => Ruling))) public disputeVote;
+    // Dispute records: upheld against an apprentice, dismissed against whoever raised them.
+    mapping(address => uint32) public disputesUpheldAgainst;
+    mapping(address => uint32) public disputesDismissed;
 
     mapping(uint256 => Promise) internal promises;
     mapping(uint256 => Resolution) internal resolutions;
@@ -88,6 +128,11 @@ contract Fledge {
     event PaidOut(uint256 indexed id, uint128 amount, string roqquRef);
     event Refunded(uint256 indexed id, uint128 amount, string roqquRef);
     event Closed(uint256 indexed id, uint128 promised, uint128 delivered);
+    event DisputeRaised(uint256 indexed id, uint32 round, Grounds grounds, address indexed by, uint128 claim, bytes32 evidence);
+    event DisputeAnswered(uint256 indexed id, uint32 round, bytes32 answer);
+    event DisputeVoted(uint256 indexed id, uint32 round, address indexed witness, Ruling ruling);
+    event DisputeDecided(uint256 indexed id, uint32 round, Ruling ruling, uint128 returnedToOga);
+    event DisputeLapsed(uint256 indexed id, uint32 round);
 
     error NotOperator();
     error NotParty();
@@ -100,6 +145,9 @@ contract Fledge {
     error ExceedsOutstanding();
     error AlreadyApproved();
     error NoOpenResolution();
+    error Frozen();
+    error NoOpenDispute();
+    error AnswerPending();
 
     constructor(address operator_) {
         operator = operator_;
@@ -190,6 +238,7 @@ contract Fledge {
     ) external {
         Promise storage p = promises[id];
         if (p.status != Status.Active) revert BadState();
+        if (disputes[id].open) revert Frozen();
         bool apprentice = msg.sender == p.apprentice;
         if (msg.sender != p.oga && !apprentice && !isWitness[id][msg.sender]) revert NotParty();
 
@@ -234,6 +283,7 @@ contract Fledge {
     }
 
     function approveResolution(uint256 id) external {
+        if (disputes[id].open) revert Frozen();
         Resolution storage r = resolutions[id];
         if (!r.open) revert NoOpenResolution();
         if (!isWitness[id][msg.sender]) revert NotWitness();
@@ -242,6 +292,7 @@ contract Fledge {
     }
 
     function consentResolution(uint256 id) external {
+        if (disputes[id].open) revert Frozen();
         Resolution storage r = resolutions[id];
         if (!r.open) revert NoOpenResolution();
         if (msg.sender != promises[id].apprentice) revert NotParty();
@@ -300,6 +351,7 @@ contract Fledge {
     // ---- payouts executed through Roqqu ----
 
     function markPaid(uint256 id, uint128 amount, string calldata roqquRef) external onlyOperator {
+        if (disputes[id].open) revert Frozen();
         Promise storage p = promises[id];
         if (amount == 0 || amount > p.payable_) revert ExceedsHeld();
         bytes32 key = keccak256(bytes(roqquRef));
@@ -319,6 +371,123 @@ contract Fledge {
         p.refundable -= amount;
         p.refunded += amount;
         emit Refunded(id, amount, roqquRef);
+    }
+
+    // ---- disputes ----
+
+    function raiseDispute(uint256 id, Grounds grounds, uint128 claim, bytes32 evidence) external {
+        Promise storage p = promises[id];
+        if (p.status != Status.Active) revert BadState();
+        if (msg.sender != p.oga && !isWitness[id][msg.sender]) revert NotParty();
+        if (evidence == bytes32(0)) revert BadInput();
+        Dispute storage d = disputes[id];
+        if (d.open) revert BadState();
+        d.open = true;
+        d.grounds = grounds;
+        d.raisedBy = msg.sender;
+        d.claim = claim;
+        d.evidence = evidence;
+        d.answer = bytes32(0);
+        d.raisedAt = uint64(block.timestamp);
+        d.answerBy = uint64(block.timestamp) + ANSWER_WINDOW;
+        d.decideBy = uint64(block.timestamp) + DECIDE_WINDOW;
+        d.dismissVotes = 0;
+        d.restitutionVotes = 0;
+        d.forfeitVotes = 0;
+        d.round += 1;
+        d.ruling = Ruling.None;
+        emit DisputeRaised(id, d.round, grounds, msg.sender, claim, evidence);
+    }
+
+    function answerDispute(uint256 id, bytes32 answer) external {
+        Dispute storage d = disputes[id];
+        if (!d.open) revert NoOpenDispute();
+        if (msg.sender != promises[id].apprentice) revert NotParty();
+        if (answer == bytes32(0)) revert BadInput();
+        d.answer = answer;
+        emit DisputeAnswered(id, d.round, answer);
+    }
+
+    /// @notice Witnesses rule once the apprentice has answered or his answer window has passed.
+    function voteDispute(uint256 id, Ruling ruling) external {
+        Dispute storage d = disputes[id];
+        if (!d.open) revert NoOpenDispute();
+        if (!isWitness[id][msg.sender]) revert NotWitness();
+        if (ruling == Ruling.None) revert BadInput();
+        if (d.answer == bytes32(0) && block.timestamp < d.answerBy) revert AnswerPending();
+        if (block.timestamp > d.decideBy) revert TooEarly();
+        if (disputeVote[id][d.round][msg.sender] != Ruling.None) revert AlreadyApproved();
+        disputeVote[id][d.round][msg.sender] = ruling;
+        if (ruling == Ruling.Dismiss) d.dismissVotes += 1;
+        else if (ruling == Ruling.Restitution) d.restitutionVotes += 1;
+        else d.forfeitVotes += 1;
+        emit DisputeVoted(id, d.round, msg.sender, ruling);
+
+        uint256 n = witnessList[id].length;
+        uint8 q = promises[id].quorum;
+        uint256 cast = uint256(d.dismissVotes) + d.restitutionVotes + d.forfeitVotes;
+        if (d.forfeitVotes == n) _forfeit(id);
+        else if (d.dismissVotes >= q) _dismiss(id);
+        else if (d.restitutionVotes >= q) _restitution(id);
+        // Everyone has voted with no unanimous forfeit: a quorum against the apprentice still means restitution.
+        else if (cast == n && uint256(d.restitutionVotes) + d.forfeitVotes >= q) _restitution(id);
+        else if (cast == n) _dismiss(id);
+    }
+
+    /// @notice Anyone can lift a dispute the witnesses did not decide in time.
+    function lapseDispute(uint256 id) external {
+        Dispute storage d = disputes[id];
+        if (!d.open) revert NoOpenDispute();
+        if (block.timestamp <= d.decideBy) revert TooEarly();
+        d.open = false;
+        emit DisputeLapsed(id, d.round);
+    }
+
+    function _dismiss(uint256 id) internal {
+        Dispute storage d = disputes[id];
+        d.open = false;
+        d.ruling = Ruling.Dismiss;
+        disputesDismissed[d.raisedBy] += 1;
+        emit DisputeDecided(id, d.round, Ruling.Dismiss, 0);
+    }
+
+    function _restitution(uint256 id) internal {
+        Promise storage p = promises[id];
+        Dispute storage d = disputes[id];
+        d.open = false;
+        d.ruling = Ruling.Restitution;
+        // Never more than was claimed, and only out of money held or approved for the apprentice.
+        uint128 take = d.claim;
+        uint128 h = held(id);
+        uint128 fromHeld = take < h ? take : h;
+        uint128 rest = take - fromHeld;
+        uint128 fromPayable = rest < p.payable_ ? rest : p.payable_;
+        p.payable_ -= fromPayable;
+        uint128 taken = fromHeld + fromPayable;
+        p.refundable += taken;
+        // The promise shrinks by the proven loss, so it is not owed twice.
+        uint128 out = outstanding(id);
+        p.promised -= take < out ? take : out;
+        disputesUpheldAgainst[p.apprentice] += 1;
+        emit DisputeDecided(id, d.round, Ruling.Restitution, taken);
+    }
+
+    function _forfeit(uint256 id) internal {
+        Promise storage p = promises[id];
+        Dispute storage d = disputes[id];
+        d.open = false;
+        d.ruling = Ruling.Forfeit;
+        uint128 back = held(id) + p.payable_;
+        p.payable_ = 0;
+        p.refundable += back;
+        disputesUpheldAgainst[p.apprentice] += 1;
+        p.status = Status.Closed;
+        emit DisputeDecided(id, d.round, Ruling.Forfeit, back);
+        emit Closed(id, originalPromise[id], p.paidOut + p.inKind);
+    }
+
+    function getDispute(uint256 id) external view returns (Dispute memory) {
+        return disputes[id];
     }
 
     // ---- views ----

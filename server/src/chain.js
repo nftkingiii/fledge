@@ -5,6 +5,22 @@ import { baseSepolia } from "viem/chains";
 export const abi = parseAbi([
   "struct Promise { address oga; address apprentice; uint64 start; uint64 end; uint32 instalments; uint8 quorum; uint8 status; uint128 promised; uint128 funded; uint128 paidOut; uint128 inKind; uint128 refunded; uint128 payable_; uint128 refundable; string trade; }",
   "struct Resolution { uint8 kind; address proposer; uint128 payNow; uint128 inKindValue; uint128 refund; uint128 reduceBy; uint64 newEnd; uint8 approvals; bool apprenticeConsent; bool open; uint32 round; string note; }",
+  "struct Dispute { bool open; uint8 grounds; address raisedBy; uint128 claim; bytes32 evidence; bytes32 answer; uint64 raisedAt; uint64 answerBy; uint64 decideBy; uint8 dismissVotes; uint8 restitutionVotes; uint8 forfeitVotes; uint32 round; uint8 ruling; }",
+  "function getDispute(uint256 id) view returns (Dispute)",
+  "function disputeVote(uint256 id, uint32 round, address who) view returns (uint8)",
+  "function disputesUpheldAgainst(address who) view returns (uint32)",
+  "function disputesDismissed(address who) view returns (uint32)",
+  "function raiseDispute(uint256 id, uint8 grounds, uint128 claim, bytes32 evidence)",
+  "function answerDispute(uint256 id, bytes32 answer)",
+  "function voteDispute(uint256 id, uint8 ruling)",
+  "event DisputeRaised(uint256 indexed id, uint32 round, uint8 grounds, address indexed by, uint128 claim, bytes32 evidence)",
+  "event DisputeAnswered(uint256 indexed id, uint32 round, bytes32 answer)",
+  "event DisputeVoted(uint256 indexed id, uint32 round, address indexed witness, uint8 ruling)",
+  "event DisputeDecided(uint256 indexed id, uint32 round, uint8 ruling, uint128 returnedToOga)",
+  "event DisputeLapsed(uint256 indexed id, uint32 round)",
+  "error Frozen()",
+  "error NoOpenDispute()",
+  "error AnswerPending()",
   "function count() view returns (uint256)",
   "function operator() view returns (address)",
   "function getPromise(uint256 id) view returns (Promise)",
@@ -51,6 +67,8 @@ export const abi = parseAbi([
 
 export const KINDS = ["Settle", "InKind", "Extend", "EarlyExit", "Reduce"];
 export const STATUS = ["None", "Proposed", "Active", "Closed"];
+export const GROUNDS = ["Theft", "Misconduct", "Abandonment"];
+export const RULINGS = ["None", "Dismiss", "Restitution", "Forfeit"];
 
 const address = process.env.FLEDGE_ADDRESS;
 const transport = http(process.env.RPC_URL || baseSepolia.rpcUrls.default.http[0]);
@@ -112,7 +130,13 @@ export async function readPromise(id) {
   ]);
   if (p.status === 0) return null;
   const approvals = await Promise.all(ws.map((w) => read("approvedRound", [big, r.round, w])));
-  const rec = await read("records", [p.oga]);
+  const [rec, d, upheld, dismissed] = await Promise.all([
+    read("records", [p.oga]),
+    read("getDispute", [big]),
+    read("disputesUpheldAgainst", [p.apprentice]),
+    read("disputesDismissed", [p.oga]),
+  ]);
+  const dvotes = d.round === 0 ? [] : await Promise.all(ws.map((w) => read("disputeVote", [big, d.round, w])));
   return {
     id: Number(id),
     oga: p.oga,
@@ -150,7 +174,22 @@ export async function readPromise(id) {
       open: r.open,
       note: r.note,
     },
+    dispute: d.round === 0 ? null : {
+      open: d.open,
+      round: d.round,
+      grounds: GROUNDS[d.grounds],
+      raisedBy: d.raisedBy,
+      claim: usd(d.claim),
+      evidence: d.evidence,
+      answered: d.answer !== "0x" + "0".repeat(64),
+      answerBy: Number(d.answerBy),
+      decideBy: Number(d.decideBy),
+      votes: ws.map((w, i) => ({ address: w, ruling: RULINGS[dvotes[i]] })),
+      ruling: RULINGS[d.ruling],
+    },
+    apprenticeRecord: { disputesUpheld: upheld },
     record: {
+      disputesDismissed: dismissed,
       promisesClosed: rec[0],
       extensions: rec[1],
       reductions: rec[2],

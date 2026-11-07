@@ -598,7 +598,9 @@ function SettleTab({ p, naira, config, role, busy, act, run, ngn }) {
         </div>
       ) : p.status === "Active" && <p className="muted">No resolution is open.</p>}
 
-      {p.status === "Active" && (
+      <Disputes p={p} naira={naira} config={config} role={role} busy={busy} act={act} ngn={ngn} names={names} />
+
+      {p.status === "Active" && !p.dispute?.open && (
         <details className="propose" open={!r?.open}>
           <summary>{r?.open ? "Raise a different resolution" : `Raise a resolution as ${name}`}</summary>
           {!due && <p className="muted">Before settlement day only an early exit or a reduction can be raised.</p>}
@@ -636,6 +638,8 @@ function RecordTab({ p, naira, config }) {
     Proposed: "Promise written", Accepted: "Apprentice accepted", Credited: "Instalment credited", ServiceAttested: "Service year attested",
     ResolutionProposed: "Resolution raised", ResolutionApproved: "Witness sealed", ResolutionApplied: "Resolution applied",
     PaidOut: "Paid to the apprentice", Refunded: "Returned to the Oga", Closed: "Promise settled",
+    DisputeRaised: "Dispute raised", DisputeAnswered: "Apprentice answered", DisputeVoted: "Witness ruled",
+    DisputeDecided: "Dispute decided", DisputeLapsed: "Dispute lapsed",
   };
   return (
     <>
@@ -645,6 +649,8 @@ function RecordTab({ p, naira, config }) {
         <div className="stat"><span>Promises settled</span><b>{rec.promisesClosed}</b></div>
         <div className="stat"><span>Delivered when settled</span><b>{pct === null ? "None yet" : `${pct}%`}</b></div>
         <div className="stat"><span>Extensions · cuts</span><b>{rec.extensions} · {rec.reductions}</b></div>
+        <div className="stat"><span>Disputes he raised that were dismissed</span><b>{rec.disputesDismissed}</b></div>
+        <div className="stat"><span>Disputes upheld against the apprentice</span><b>{p.apprenticeRecord.disputesUpheld}</b></div>
       </div>
       <h3>Everything on promise No. {p.id}</h3>
       <ol className="timeline">
@@ -717,5 +723,88 @@ function Payout({ p, naira, ngn, busy, run }) {
       </button>
       {method === "bank" && <small className="muted">Converted at Roqqu's rate, ₦{ngn?.toLocaleString()} per $1. Bank rail simulated; no real money moves.</small>}
     </div>
+  );
+}
+
+const GROUND_LABEL = { Theft: "Theft", Misconduct: "Misconduct", Abandonment: "Left the shop" };
+const RULING_LABEL = { Dismiss: "Dismiss", Restitution: "Restitution", Forfeit: "Forfeit" };
+
+/** Disputes protect the Oga: raised by him or a witness, answered by the apprentice, decided by the witnesses alone. */
+function Disputes({ p, naira, config, role, busy, act, ngn, names }) {
+  const d = p.dispute;
+  const now = useNow();
+  const [form, setForm] = useState({ grounds: "Theft", claimNgn: "", evidence: "" });
+  const [answer, setAnswer] = useState("");
+  const isWitness = ["union", "uncle", "pastor"].includes(role);
+  const me = config.roles?.[role]?.toLowerCase();
+  const myVote = d?.votes.find((v) => v.address.toLowerCase() === me)?.ruling;
+  const name = roleOf(role)[2];
+  const days = (t) => Math.max(0, Math.ceil((t - now) / 86400));
+
+  if (d?.open) {
+    return (
+      <div className="dispute">
+        <div className="dispute-head">
+          <b>Dispute: {GROUND_LABEL[d.grounds]}</b>
+          <small>Raised by {names[d.raisedBy.toLowerCase()] || short(d.raisedBy)} · round {d.round}</small>
+        </div>
+        <p className="note bad">Frozen. Nothing can be settled or paid until the witnesses decide.</p>
+        <dl className="terms compact">
+          <div><dt>Loss claimed</dt><dd>{naira(d.claim)}</dd></div>
+          <div><dt>Evidence</dt><dd><span className="mono">{d.evidence.slice(0, 10)}…{d.evidence.slice(-6)}</span><small>Fingerprint on chain; the documents stay with the union</small></dd></div>
+          <div><dt>Apprentice</dt><dd>{d.answered ? "Has answered" : `Can answer for ${days(d.answerBy)} more days`}</dd></div>
+          <div><dt>Decide by</dt><dd>{date(d.decideBy)}, or it lapses</dd></div>
+        </dl>
+        <ul className="people">
+          {d.votes.map((v) => (
+            <li key={v.address}>
+              <span className="grow"><b>{names[v.address.toLowerCase()] || short(v.address)}</b></span>
+              <span className={v.ruling === "None" ? "pending" : "check"}>{v.ruling === "None" ? "Not yet" : RULING_LABEL[v.ruling]}</span>
+            </li>
+          ))}
+        </ul>
+        <p className="muted">Restitution needs {p.quorum} witnesses and never takes more than the loss claimed. Forfeit needs every witness. The apprentice's consent is not needed.</p>
+        {role === "apprentice" && !d.answered && (
+          <div className="fields">
+            <label className="full">Your answer<input value={answer} onChange={(e) => setAnswer(e.target.value)} placeholder="What happened, in your words" maxLength={500} /></label>
+            <button className="btn primary" disabled={busy || !answer.trim()} onClick={() => act("answerDispute", { answer }, "Answer recorded")}>Answer as {name}</button>
+          </div>
+        )}
+        {isWitness && myVote === "None" && (
+          <div className="row">
+            {["Dismiss", "Restitution", "Forfeit"].map((k) => (
+              <button key={k} className={`btn ${k === "Restitution" ? "primary" : ""}`} disabled={busy} onClick={() => act("voteDispute", { ruling: k }, `${name}: ${RULING_LABEL[k]}`)}>{RULING_LABEL[k]}</button>
+            ))}
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  const canRaise = p.status === "Active" && (role === "oga" || isWitness);
+  return (
+    <>
+      {d && !d.open && (
+        <p className={`note ${d.ruling === "Dismiss" ? "warn" : "bad"}`}>
+          Last dispute ({GROUND_LABEL[d.grounds]}): {d.ruling === "None" ? "lapsed without a decision" : d.ruling === "Dismiss" ? "dismissed by the witnesses" : d.ruling === "Restitution" ? `restitution, the loss went back to the Oga` : "forfeit, the promise ended"}.
+        </p>
+      )}
+      {canRaise && (
+        <details className="propose">
+          <summary>Raise a dispute as {name}</summary>
+          <p className="muted">For theft, misconduct or an apprentice who left the shop. It freezes the promise; the apprentice gets 14 days to answer; the witnesses decide.</p>
+          <div className="kinds" role="radiogroup" aria-label="Grounds">
+            {Object.entries(GROUND_LABEL).map(([k, l]) => (
+              <button key={k} role="radio" aria-checked={form.grounds === k} className={form.grounds === k ? "on" : ""} onClick={() => setForm({ ...form, grounds: k })}>{l}</button>
+            ))}
+          </div>
+          <div className="fields">
+            <label>Loss claimed, ₦<input inputMode="numeric" value={form.claimNgn} onChange={(e) => setForm({ ...form, claimNgn: e.target.value })} placeholder="0 if no money was lost" /></label>
+            <label className="full">Evidence<input value={form.evidence} onChange={(e) => setForm({ ...form, evidence: e.target.value })} placeholder="e.g. police report no., union statement, shop ledger" maxLength={500} /></label>
+          </div>
+          <button className="btn primary" disabled={busy || !form.evidence.trim()} onClick={() => act("raiseDispute", { grounds: form.grounds, claim: (Number(String(form.claimNgn).replace(/,/g, "")) || 0) / (ngn || 1), evidence: form.evidence }, "Dispute raised; the promise is frozen")}>Raise dispute</button>
+        </details>
+      )}
+    </>
   );
 }
