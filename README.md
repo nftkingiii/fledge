@@ -22,7 +22,8 @@ Anambra Web3 Hackathon 2026 · DeFi track.
 
    It applies only when the **apprentice consents** and **a quorum of witnesses approves**. The Oga's approval is not required, and he has no way to withdraw funded money.
 5. **Payout through Roqqu, or to a bank.** Only what an applied resolution made payable can be sent: as USDC on Base through Roqqu Send, or as naira to the apprentice's bank account (bank list and account-name lookup first). The bank or Roqqu reference, and for naira the amount and rate, are recorded on chain; account numbers are kept to their last four digits.
-6. **A public settlement record.** Each Oga carries a record across apprentices: promises closed, % delivered, extensions, reductions.
+6. **Disputes protect the Oga too.** If the apprentice steals, misbehaves or leaves the shop, the Oga or a witness raises a dispute with the fingerprint of the evidence (the documents stay off chain). The promise freezes, the apprentice gets 14 days to answer, and the witnesses decide without his consent: restitution of the proven loss (never more than claimed), forfeit (needs every witness), or dismissal (which counts against whoever raised it). An undecided dispute lapses after 30 days.
+7. **A public settlement record.** Each Oga carries a record across apprentices: promises closed, % delivered, extensions, reductions.
 
 ## What is real, what is simulated
 
@@ -44,13 +45,13 @@ The simulator has an outage switch. During an outage no instalment link can be c
 
 ## Evidence
 
-- Contract: [`0x82fff61ae4b5344149a895b4259f8f4701d9abc2`](https://sepolia.basescan.org/address/0x82fff61ae4b5344149a895b4259f8f4701d9abc2) on Base Sepolia, verified on [Sourcify](https://repo.sourcify.dev/84532/0x82fff61ae4b5344149a895b4259f8f4701d9abc2) (exact match).
-- Deploy tx: [`0x60a5…45cb`](https://sepolia.basescan.org/tx/0x60a5d1c209abdc809fc801f3b3c842fe8d4391890fbeb7f8a4c8747c97ac45cb).
+- Contract: [`0xa7b7e989387e12176a1c6704bcdd0304682164fc`](https://sepolia.basescan.org/address/0xa7b7e989387e12176a1c6704bcdd0304682164fc) on Base Sepolia, verified on [Sourcify](https://repo.sourcify.dev/84532/0xa7b7e989387e12176a1c6704bcdd0304682164fc) (exact match). Disputes were added in this version; the flows below marked "previous deployment" ran on `0x82fff61ae4b5344149a895b4259f8f4701d9abc2`.
+- Dispute on the live app (promise #1): theft claim of $300 raised by the Oga froze the promise → the apprentice's early exit was refused while frozen → a witness vote before his answer was refused → he answered → two witnesses ruled restitution ([tx](https://sepolia.basescan.org/tx/0xd04d422a94e955ba0049bb116574924f3892893a29b0b095cfe51e0acb199e8e)): $300 back to the Oga, the promise reduced to $1,700, one dispute upheld on the apprentice's record.
 - Live app: https://fledge.up.railway.app
-- Full flow on Base Sepolia (promise #1): seeded arrears → exact Roqqu payment credited → underpayment refused → link refused during a Roqqu outage → the Oga's attempt to cut the promise stays open without the apprentice → settlement before the date refused → 60% settlement applied after the apprentice consented ([tx](https://sepolia.basescan.org/tx/0x8bc1c39d8f088864f70d4821ac64f74204e921086323ab94721d36ab9622b2d8)) → payout recorded ([PaidOut tx](https://sepolia.basescan.org/tx/0x07a95db1b2211b409741b58f34efefa8390f0f972cc9e032018956e938571514)). The remaining 40% rolls into a 12-month plan.
-- Naira on Base Sepolia (promise #2): ₦171,875 bank transfer credited as $125 at ₦1,375/$ (on-chain ref `naira:FL2N0833841914:171875NGN@1375`) → half transfer refused → forged webhook rejected (401) → on settlement day ₦1,718,750 paid to a GTBank account after name lookup ([PaidOut tx](https://sepolia.basescan.org/tx/0x5632cfd4c284c1c3dd01913ec6bca8aa4414a3b6fec8b8ccd58fd16a00d9679a)).
+- Full flow on Base Sepolia (previous deployment, promise #1): seeded arrears → exact Roqqu payment credited → underpayment refused → link refused during a Roqqu outage → the Oga's attempt to cut the promise stays open without the apprentice → settlement before the date refused → 60% settlement applied after the apprentice consented ([tx](https://sepolia.basescan.org/tx/0x8bc1c39d8f088864f70d4821ac64f74204e921086323ab94721d36ab9622b2d8)) → payout recorded ([PaidOut tx](https://sepolia.basescan.org/tx/0x07a95db1b2211b409741b58f34efefa8390f0f972cc9e032018956e938571514)). The remaining 40% rolls into a 12-month plan.
+- Naira on Base Sepolia (previous deployment, promise #2): ₦171,875 bank transfer credited as $125 at ₦1,375/$ (on-chain ref `naira:FL2N0833841914:171875NGN@1375`) → half transfer refused → forged webhook rejected (401) → on settlement day ₦1,718,750 paid to a GTBank account after name lookup ([PaidOut tx](https://sepolia.basescan.org/tx/0x5632cfd4c284c1c3dd01913ec6bca8aa4414a3b6fec8b8ccd58fd16a00d9679a)).
 - Each witness seal is that witness's own `approveResolution` transaction, from their own address; the apprentice's consent is a `consentResolution` transaction.
-- Contract tests: 16 Foundry tests, including every adverse case above (`contracts/test/Fledge.t.sol`).
+- Contract tests: 27 Foundry tests, including every adverse case and dispute path above (`contracts/test/Fledge.t.sol`).
 
 ## Run it
 
